@@ -21,6 +21,15 @@
  *          15 May 2002
  */
 
+
+/******************************************************************
+ 
+ Includes Intel Corporation's changes/modifications dated: 07/2011.
+ Changed/modified portions - Copyright(c) 2011, Intel Corporation. 
+
+******************************************************************/
+
+
 #ifndef MMC_MMC_H
 #define MMC_MMC_H
 
@@ -271,6 +280,12 @@ struct _mmc_csd {
 #define EXT_CSD_SEC_ERASE_MULT		230	/* RO */
 #define EXT_CSD_SEC_FEATURE_SUPPORT	231	/* RO */
 #define EXT_CSD_TRIM_MULT		232	/* RO */
+
+#ifdef CONFIG_ARCH_GEN3
+#define EXT_CSD_BOOT_SIZE_MULT	226	/* RO */
+#define EXT_CSD_BOOT_CONFIG	179	/* R/W */
+#define EXT_CSD_GP_SIZE_MULT	143	/* R/W */
+#endif
 
 /*
  * EXT_CSD field definitions

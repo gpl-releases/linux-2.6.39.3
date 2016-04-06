@@ -120,6 +120,7 @@ int mmc_go_idle(struct mmc_host *host)
 	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_NONE | MMC_CMD_BC;
 
 	err = mmc_wait_for_cmd(host, &cmd, 0);
+    //printk("[PowerOn] mmc_go_idle: mmc_wait_for_cmd(%d) return:%d\n", MMC_GO_IDLE_STATE,err);
 
 	mmc_delay(1);
 
@@ -256,9 +257,13 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 	/* dma onto stack is unsafe/nonportable, but callers to this
 	 * routine normally provide temporary on-stack buffers ...
 	 */
+    //printk("[PowerOn]: mmc_send_cxd_data: kmalloc.\n");
 	data_buf = kmalloc(len, GFP_KERNEL);
 	if (data_buf == NULL)
+    {
+        //printk("[PowerOn]: mmc_send_cxd_data: kmalloc failed.\n");
 		return -ENOMEM;
+    }
 
 	memset(&mrq, 0, sizeof(struct mmc_request));
 	memset(&cmd, 0, sizeof(struct mmc_command));
@@ -283,6 +288,7 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 	data.sg = &sg;
 	data.sg_len = 1;
 
+    //printk("[PowerOn]: mmc_send_cxd_data: sg_init_one.\n");
 	sg_init_one(&sg, data_buf, len);
 
 	if (opcode == MMC_SEND_CSD || opcode == MMC_SEND_CID) {
@@ -292,17 +298,27 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 		 */
 		data.timeout_ns = 0;
 		data.timeout_clks = 64;
-	} else
+        //printk("[PowerOn]: mmc_send_cxd_data: data.timeout_ns = 0, data.timeout_clks = 64\n");
+	} 
+    else
+    {
+        //printk("[PowerOn]: mmc_send_cxd_data: mmc_set_data_timeout()\n");
 		mmc_set_data_timeout(&data, card);
+    }
 
+    //printk("[PowerOn]: mmc_send_cxd_data: mmc_wait_for_req()\n");
 	mmc_wait_for_req(host, &mrq);
 
 	memcpy(buf, data_buf, len);
 	kfree(data_buf);
 
 	if (cmd.error)
+    {
+        //printk("[PowerOn]: mmc_send_cxd_data: cmd.error = %d\n",cmd.error);
 		return cmd.error;
+    }
 	if (data.error)
+        //printk("[PowerOn]: mmc_send_cxd_data: data.error = %d\n",data.error);
 		return data.error;
 
 	return 0;
@@ -349,6 +365,7 @@ int mmc_send_cid(struct mmc_host *host, u32 *cid)
 
 int mmc_send_ext_csd(struct mmc_card *card, u8 *ext_csd)
 {
+    //printk("[PowerOn]: mmc_send_ext_csd: mmc_send_cxd_data.\n");
 	return mmc_send_cxd_data(card, card->host, MMC_SEND_EXT_CSD,
 			ext_csd, 512);
 }

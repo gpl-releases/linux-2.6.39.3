@@ -10,6 +10,13 @@
  *	as published by the Free Software Foundation; either version
  *	2 of the License, or (at your option) any later version.
  */
+ /*
+         Includes Intel Corporation's changes/modifications dated: Oct.2011.
+         Changed/modified portions - Copyright © 2011, Intel Corporation
+         1. TI Meta Data Extensions.
+         2. TI Layer 2 Selective Forwarder
+ */
+
 
 #ifndef _LINUX_SKBUFF_H
 #define _LINUX_SKBUFF_H
@@ -188,6 +195,36 @@ enum {
 	/* ensure the originating sk reference is available on driver level */
 	SKBTX_DRV_NEEDS_SK_REF = 1 << 3,
 };
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+
+/* The length of the EPI header. */
+#define TI_EPI_HEADER_LEN               8
+
+/* Flag definitions.... */
+#define TI_PPM_SESSION_INGRESS_RECORDED 0x1
+#define TI_PPM_SESSION_BYPASS           0x2
+
+#include <linux/ti_ppm.h>
+
+/* The structure contains information that needs to be stored on a per packet basis 
+ * for the TI Packet Processor to operate. */
+typedef struct TI_PP_PACKET_INFO
+{
+    TI_PP_SESSION   ti_session;
+    unsigned int    ti_pp_flags;
+    char            ti_epi_header[TI_EPI_HEADER_LEN];
+#ifdef CONFIG_TI_PACKET_PROCESSOR_STATS
+    void*           ti_match_llc_filter;
+    void*           ti_match_inbound_ip_filter;
+    void*           ti_match_outbound_ip_filter;
+    void*           ti_match_qos_classifier;
+#endif
+
+}TI_PP_PACKET_INFO;
+
+#endif /* CONFIG_TI_PACKET_PROCESSOR */
+
 
 /* This data is invariant across clones and lives at
  * the end of the header data, ie. at skb->end.
@@ -417,7 +454,34 @@ struct sk_buff {
 	sk_buff_data_t		transport_header;
 	sk_buff_data_t		network_header;
 	sk_buff_data_t		mac_header;
-	/* These elements must be at the end, see alloc_skb() for details.  */
+
+#ifdef CONFIG_TI_META_DATA
+    unsigned int    ti_meta_info;
+    unsigned int    ti_meta_info2;
+#endif /* CONFIG_TI_META_DATA */
+
+#ifdef CONFIG_INTEL_NF_GWMETA_SUPPORT
+    __u32    ti_gw_meta;
+#endif /* INTEL_NF_GWMETA_SUPPORT */
+
+#ifdef CONFIG_TI_DOCSIS_INPUT_DEV
+    struct net_device	*ti_docsis_input_dev;
+#endif /* CONFIG_TI_DOCSIS_INPUT_DEV */
+
+#ifdef CONFIG_INTEL_DOCSIS_ICMP_IIF
+    int			docsis_icmp_iif;
+#endif /* CONFIG_INTEL_DOCSIS_ICMP_IIF */
+
+#ifdef CONFIG_TI_L2_SELECTIVE_FORWARDER
+    unsigned long long   ti_selective_fwd_dev_info;
+#endif /* CONFIG_TI_L2_SELECTIVE_FORWARDER */
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    TI_PP_PACKET_INFO   pp_packet_info;
+#endif  /* CONFIG_TI_PACKET_PROCESSOR */
+	
+
+        /* These elements must be at the end, see alloc_skb() for details.  */
 	sk_buff_data_t		tail;
 	sk_buff_data_t		end;
 	unsigned char		*head,

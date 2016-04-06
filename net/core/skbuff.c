@@ -31,11 +31,20 @@
  *	as published by the Free Software Foundation; either version
  *	2 of the License, or (at your option) any later version.
  */
+/* 
+ * Includes Intel Corporation's changes/modifications dated: [11/07/2011].
+* Changed/modified portions - Copyright © [2011], Intel Corporation.
+*/
 
 /*
  *	The functions in this file will not compile correctly with gcc 2.4.x
  */
-
+/*
+         Includes Intel Corporation's changes/modifications dated: [Oct.2011]. 
+         Changed/modified portions - Copyright © 2011, Intel Corporation
+         1. TI Meta Data Extensions.
+         2. TI Layer 2 Selective Forwarder
+*/
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
@@ -69,6 +78,17 @@
 #include <trace/events/skb.h>
 
 #include "kmap_skb.h"
+
+#ifdef CONFIG_TI_DOCSIS_INPUT_DEV
+#define DBRIDGE_IFINDEX_CHK(__ifindex, format, args...) \
+{ \
+    if (((__ifindex) < 0) || ((__ifindex) >= TI_MAX_DEVICE_INDEX)) \
+    { \
+        printk("\n===>>> %s - %d: Currupt " #__ifindex " - %d\n" format, __func__, __LINE__, __ifindex, ##args); \
+        BUG(); \
+    } \
+}
+#endif
 
 static struct kmem_cache *skbuff_head_cache __read_mostly;
 static struct kmem_cache *skbuff_fclone_cache __read_mostly;
@@ -211,6 +231,39 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
 	atomic_set(&shinfo->dataref, 1);
 	kmemcheck_annotate_variable(shinfo->destructor_arg);
+    
+#ifdef CONFIG_TI_META_DATA
+    skb->ti_meta_info = 0;
+    skb->ti_meta_info2= 0;
+#endif /* CONFIG_TI_META_DATA */
+
+#ifdef CONFIG_INTEL_NF_GWMETA_SUPPORT
+    skb->ti_gw_meta= 0;
+#endif /* INTEL_NF_GWMETA_SUPPORT */
+
+#ifdef CONFIG_TI_DOCSIS_INPUT_DEV
+    skb->ti_docsis_input_dev = NULL;
+#endif /* CONFIG_TI_DOCSIS_INPUT_DEV */
+
+#ifdef CONFIG_INTEL_DOCSIS_ICMP_IIF
+    skb->docsis_icmp_iif = 0;
+#endif /* CONFIG_INTEL_DOCSIS_ICMP_IIF */
+
+
+#ifdef CONFIG_TI_L2_SELECTIVE_FORWARDER
+    skb->ti_selective_fwd_dev_info = 0;
+#endif /* CONFIG_TI_L2_SELECTIVE_FORWARDER */
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    memset((void *)&skb->pp_packet_info, 0, sizeof(TI_PP_PACKET_INFO));
+#endif  /* CONFIG_TI_PACKET_PROCESSOR */
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR_STATS
+    skb->pp_packet_info.ti_match_llc_filter = NULL;
+    skb->pp_packet_info.ti_match_inbound_ip_filter = NULL;
+    skb->pp_packet_info.ti_match_outbound_ip_filter = NULL;
+    skb->pp_packet_info.ti_match_qos_classifier = NULL;
+#endif  /* CONFIG_TI_PACKET_PROCESSOR_STATS */
 
 	if (fclone) {
 		struct sk_buff *child = skb + 1;
@@ -574,6 +627,30 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 	atomic_inc(&(skb_shinfo(skb)->dataref));
 	skb->cloned = 1;
 
+#ifdef CONFIG_TI_META_DATA
+    C(ti_meta_info);
+	C(ti_meta_info2);
+#endif /* CONFIG_TI_META_DATA */
+
+#ifdef CONFIG_TI_DOCSIS_INPUT_DEV
+    C(ti_docsis_input_dev);
+    if (n->ti_docsis_input_dev)
+    {
+        DBRIDGE_IFINDEX_CHK(n->ti_docsis_input_dev->ifindex, "dev %p, devname %s, ti_docsis_input_dev %p, ti_docsis_input_dev->name %s", n->dev, n->dev ? n->dev->name : NULL, n->ti_docsis_input_dev, n->ti_docsis_input_dev->name);
+    }
+#endif /* CONFIG_TI_DOCSIS_INPUT_DEV */
+
+#ifdef CONFIG_INTEL_DOCSIS_ICMP_IIF
+    C(docsis_icmp_iif);
+#endif /* CONFIG_INTEL_DOCSIS_ICMP_IIF */
+
+#ifdef CONFIG_TI_L2_SELECTIVE_FORWARDER
+    C(ti_selective_fwd_dev_info);
+#endif /* CONFIG_TI_L2_SELECTIVE_FORWARDER */
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    memcpy((void *)&n->pp_packet_info, (void *)&skb->pp_packet_info, sizeof(TI_PP_PACKET_INFO));
+#endif  /* CONFIG_TI_PACKET_PROCESSOR */	
 	return n;
 #undef C
 }
@@ -654,6 +731,36 @@ static void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	skb_shinfo(new)->gso_size = skb_shinfo(old)->gso_size;
 	skb_shinfo(new)->gso_segs = skb_shinfo(old)->gso_segs;
 	skb_shinfo(new)->gso_type = skb_shinfo(old)->gso_type;
+
+
+#ifdef CONFIG_TI_META_DATA
+    new->ti_meta_info = old->ti_meta_info;
+    new->ti_meta_info2 = old->ti_meta_info2;
+#endif /* CONFIG_TI_META_DATA */
+
+#ifdef CONFIG_INTEL_NF_GWMETA_SUPPORT
+    new->ti_gw_meta = old->ti_gw_meta;
+#endif /* INTEL_NF_GWMETA_SUPPORT */
+
+#ifdef CONFIG_TI_DOCSIS_INPUT_DEV
+    new->ti_docsis_input_dev = old->ti_docsis_input_dev ;
+    if (new->ti_docsis_input_dev)
+    {
+        DBRIDGE_IFINDEX_CHK(new->ti_docsis_input_dev->ifindex, "dev %p, devname %s, ti_docsis_input_dev %p, ti_docsis_input_dev->name %s", new->dev, new->dev ? new->dev->name : NULL, new->ti_docsis_input_dev, new->ti_docsis_input_dev->name);
+    }
+#endif /* CONFIG_TI_DOCSIS_INPUT_DEV */
+
+#ifdef CONFIG_INTEL_DOCSIS_ICMP_IIF
+    new->docsis_icmp_iif = old->docsis_icmp_iif;
+#endif /* CONFIG_INTEL_DOCSIS_ICMP_IIF */
+
+#ifdef CONFIG_TI_L2_SELECTIVE_FORWARDER
+    new->ti_selective_fwd_dev_info = old->ti_selective_fwd_dev_info;
+#endif /* CONFIG_TI_L2_SELECTIVE_FORWARDER */
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    memcpy((void *)&new->pp_packet_info, (void *)&old->pp_packet_info, sizeof(TI_PP_PACKET_INFO));
+#endif  /* CONFIG_TI_PACKET_PROCESSOR */
 }
 
 /**

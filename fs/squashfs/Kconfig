@@ -87,3 +87,14 @@ config SQUASHFS_FRAGMENT_CACHE_SIZE
 
 	  Note there must be at least one cached fragment.  Anything
 	  much more than three will probably not make much difference.
+
+config SQUASHFS_MAX_BLOCK_SIZE
+        int "Maximum block size to support" if SQUASHFS_EMBEDDED
+        depends on SQUASHFS
+        default "131072"
+        help
+          Define the maximum supported block size. Note that the more the
+          block size is bigger, the more memory it requires.
+          The block size must be equal or bigger than the block size that
+          the SquashFS image uses.
+

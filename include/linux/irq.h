@@ -401,6 +401,9 @@ extern void handle_percpu_irq(unsigned int irq, struct irq_desc *desc);
 extern void handle_bad_irq(unsigned int irq, struct irq_desc *desc);
 extern void handle_nested_irq(unsigned int irq);
 
+#define do_edge_IRQ      handle_edge_irq
+#define do_level_IRQ     handle_level_irq
+
 /* Handling of unhandled and spurious interrupts: */
 extern void note_interrupt(unsigned int irq, struct irq_desc *desc,
 			   irqreturn_t action_ret);
@@ -436,6 +439,8 @@ irq_set_handler(unsigned int irq, irq_flow_handler_t handle)
 	__irq_set_handler(irq, handle, 0, NULL);
 }
 
+
+#define set_irq_handler irq_set_handler
 /*
  * Set a highlevel chained flow handler for a given IRQ.
  * (a chained handler is automatically enabled and set to

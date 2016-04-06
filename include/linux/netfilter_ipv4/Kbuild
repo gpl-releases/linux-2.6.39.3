@@ -12,3 +12,6 @@ header-y += ipt_ah.h
 header-y += ipt_ecn.h
 header-y += ipt_realm.h
 header-y += ipt_ttl.h
+header-y += ipt_TRIGGER.h
+header-y += ipt_webstr.h
+header-y += ipt_GWMETA.h

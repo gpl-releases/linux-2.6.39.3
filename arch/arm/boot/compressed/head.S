@@ -8,6 +8,29 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+
+/* Copyright 2008, Texas Instruments Incorporated
+ *
+ * This program has been modified from its original operation by 
+ * Texas Instruments to do the following:
+ * 
+ * Explanation of modification:
+ *  Increased stack size for lzma support
+ *  
+ *
+ * THIS MODIFIED SOFTWARE AND DOCUMENTATION ARE PROVIDED
+ * "AS IS," AND TEXAS INSTRUMENTS MAKES NO REPRESENTATIONS
+ * OR WARRENTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+ * TO, WARRANTIES OF MERCHANTABILITY OR FITNESS FOR ANY
+ * PARTICULAR PURPOSE OR THAT THE USE OF THE SOFTWARE OR
+ * DOCUMENTATION WILL NOT INFRINGE ANY THIRD PARTY PATENTS,
+ * COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS.
+ * See The GNU General Public License for more details.
+ *
+ * These changes are covered under version 2 of the GNU General Public License,
+ * dated June 1991.
+ */
+
 #include <linux/linkage.h>
 
 /*
@@ -58,6 +81,21 @@
 		add	\rb, \rb, #0x00010000	@ Ser1
 #endif
 		.endm
+#elif defined(CONFIG_ARCH_OMAP2)
+		.macro	loadsp, rb
+		mov	\rb, #0x48000000	@ physical base address
+		add	\rb, \rb, #0x0006a000
+#ifdef CONFIG_OMAP_LL_DEBUG_UART2
+		add	\rb, \rb, #0x00002000
+#endif
+#ifdef CONFIG_OMAP_LL_DEBUG_UART3
+		add	\rb, \rb, #0x00004000
+#endif
+		.endm
+		.macro	writeb, rb
+		strb	\rb, [r3]
+		.endm
+
 #elif defined(CONFIG_ARCH_S3C2410)
 		.macro loadsp, rb, tmp
 		mov	\rb, #0x50000000
@@ -180,6 +218,12 @@ not_angel:
 
 restart:	adr	r0, LC0
 		ldmia	r0, {r1, r2, r3, r6, r9, r11, r12}
+
+#ifdef CONFIG_RUNTIME_PHYS_OFFSET
+		and	r10, pc, #0xf0000000	@ fix up zreladdr
+		add	r4, r4, r10
+#endif
+
 		ldr	sp, [r0, #28]
 
 		/*
@@ -350,7 +394,11 @@ LC0:		.word	LC0			@ r1
 		.word	_image_size		@ r9
 		.word	_got_start		@ r11
 		.word	_got_end		@ ip
+#ifndef CONFIG_KERNEL_COMPRESS_7ZIP		
 		.word	user_stack_end		@ sp
+#else
+		.word	user_stack_end		@ sp
+#endif
 		.size	LC0, . - LC0
 
 #ifdef CONFIG_ARCH_RPC
@@ -1073,10 +1121,26 @@ memdump:	mov	r12, r0
 		mov	pc, r10
 #endif
 
+#ifdef CONFIG_MCOUNT
+/* CONFIG_MCOUNT causes boot header to be built with -pg requiring this
+ * trampoline
+ */
+                .text
+                .align 0
+                .type mcount %function
+                .global mcount
+mcount:
+		mov pc, lr	@ just return
+#endif
+
 		.ltorg
 reloc_code_end:
 
 		.align
 		.section ".stack", "aw", %nobits
+#ifndef CONFIG_KERNEL_COMPRESS_7ZIP
 user_stack:	.space	4096
+#else
+user_stack:	.space	8192
+#endif
 user_stack_end:

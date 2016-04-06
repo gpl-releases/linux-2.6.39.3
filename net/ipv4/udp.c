@@ -865,6 +865,11 @@ int udp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	}
 	ipc.addr = inet->inet_saddr;
 
+#ifdef CONFIG_TI_META_DATA
+    /* Initialize the meta-data field */
+    ipc.ti_meta_info = 0;
+#endif 
+
 	ipc.oif = sk->sk_bound_dev_if;
 	err = sock_tx_timestamp(sk, &ipc.tx_flags);
 	if (err)

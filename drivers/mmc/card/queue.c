@@ -9,6 +9,16 @@
  * published by the Free Software Foundation.
  *
  */
+
+
+/******************************************************************
+ 
+ Includes Intel Corporation's changes/modifications dated: 07/2011.
+ Changed/modified portions - Copyright(c) 2011, Intel Corporation. 
+
+******************************************************************/
+
+
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/blkdev.h>
@@ -18,6 +28,11 @@
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
+
+#ifdef CONFIG_ARCH_GEN3
+#include <linux/mmc/bp.h>
+#endif
+
 #include "queue.h"
 
 #define MMC_QUEUE_BOUNCESZ	65536
@@ -206,6 +221,22 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card, spinlock_t *lock
 		}
 		sg_init_table(mq->sg, host->max_segs);
 	}
+
+#ifdef CONFIG_ARCH_GEN3
+	mq->bp_buf = kmalloc(MAX_NUM_OF_SECTORS_TRANSFERD * MMC_SECTOR_SIZE, GFP_KERNEL);
+	if (!mq->bp_buf) {
+		printk("unable to alloc boot partition memory buffer\n");
+		ret = -ENOMEM;
+		goto cleanup_queue;
+	}
+
+	mq->bp_sg = kmalloc(sizeof(struct scatterlist), GFP_KERNEL);
+	if (!mq->bp_sg) {
+		ret = -ENOMEM;
+		goto cleanup_queue;
+	}
+	sg_init_table(mq->bp_sg, 1);
+#endif
 
 	sema_init(&mq->thread_sem, 1);
 

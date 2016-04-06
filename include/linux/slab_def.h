@@ -124,6 +124,9 @@ struct kmem_cache {
 	 */
 };
 
+
+#define kmem_cache_t kmem_cache 
+
 /* Size description struct for general caches. */
 struct cache_sizes {
 	size_t		 	cs_size;

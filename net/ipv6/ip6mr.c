@@ -1897,6 +1897,7 @@ static int ip6mr_forward2(struct net *net, struct mr6_table *mrt,
 	struct ipv6hdr *ipv6h;
 	struct mif_device *vif = &mrt->vif6_table[vifi];
 	struct net_device *dev;
+	struct net_device *indev;
 	struct dst_entry *dst;
 	struct flowi6 fl6;
 
@@ -1940,6 +1941,7 @@ static int ip6mr_forward2(struct net *net, struct mr6_table *mrt,
 	 * result in receiving multiple packets.
 	 */
 	dev = vif->dev;
+	indev = skb->dev;
 	skb->dev = dev;
 	vif->pkt_out++;
 	vif->bytes_out += skb->len;
@@ -1954,7 +1956,7 @@ static int ip6mr_forward2(struct net *net, struct mr6_table *mrt,
 
 	IP6CB(skb)->flags |= IP6SKB_FORWARDED;
 
-	return NF_HOOK(NFPROTO_IPV6, NF_INET_FORWARD, skb, skb->dev, dev,
+	return NF_HOOK(NFPROTO_IPV6, NF_INET_FORWARD, skb, indev, dev,
 		       ip6mr_forward2_finish);
 
 out_free:

@@ -586,7 +586,12 @@ static void rndis_close(struct gether *geth)
 	DBG(geth->func.config->cdev, "%s\n", __func__);
 
 	rndis_set_param_medium(rndis->config, NDIS_MEDIUM_802_3, 0);
-	rndis_signal_disconnect(rndis->config);
+#ifdef CONFIG_MACH_PUMA5
+	rndis_signal_disconnect(rndis->config, 0);
+#else
+    rndis_signal_disconnect(rndis->config);
+#endif	
+	
 }
 
 /*-------------------------------------------------------------------------*/

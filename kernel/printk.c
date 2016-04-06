@@ -68,6 +68,10 @@ int console_printk[4] = {
 	DEFAULT_CONSOLE_LOGLEVEL,	/* default_console_loglevel */
 };
 
+#if 1 /*SA_CUSTOM*/
+int irwChoice = 2;   // cmConsoleMode feature
+#endif
+
 /*
  * Low level drivers may need that to know if they can schedule in
  * their unblank() callback or not. So let's export it.
@@ -708,6 +712,9 @@ asmlinkage int printk(const char *fmt, ...)
 {
 	va_list args;
 	int r;
+#if 1 /*SA_CUSTOM*/
+        if (irwChoice == 0) return 0; 
+#endif
 
 #ifdef CONFIG_KGDB_KDB
 	if (unlikely(kdb_trap_printk)) {

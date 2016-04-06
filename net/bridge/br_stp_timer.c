@@ -10,9 +10,14 @@
  *	as published by the Free Software Foundation; either version
  *	2 of the License, or (at your option) any later version.
  */
+/* 
+ * Includes Intel Corporation's changes/modifications dated: [11/07/2011].
+* Changed/modified portions - Copyright © [2011], Intel Corporation.
+*/
 
 #include <linux/kernel.h>
 #include <linux/times.h>
+#include <linux/ti_hil.h>
 
 #include "br_private.h"
 #include "br_private_stp.h"
@@ -81,8 +86,7 @@ static void br_message_age_timer_expired(unsigned long arg)
 static void br_forward_delay_timer_expired(unsigned long arg)
 {
 	struct net_bridge_port *p = (struct net_bridge_port *) arg;
-	struct net_bridge *br = p->br;
-
+	struct net_bridge *br = p->br;  
 	br_debug(br, "port %u(%s) forward delay timer\n",
 		 (unsigned) p->port_no, p->dev->name);
 	spin_lock(&br->lock);
@@ -95,6 +99,9 @@ static void br_forward_delay_timer_expired(unsigned long arg)
 		if (br_is_designated_for_some_port(br))
 			br_topology_change_detection(br);
 		netif_carrier_on(br->dev);
+#ifdef CONFIG_TI_PACKET_PROCESSOR	
+		ti_hil_pp_event(TI_BRIDGE_PORT_FORWARD, (void *)p->dev);
+#endif //CONFIG_TI_PACKET_PROCESSOR
 	}
 	br_log_state(p);
 	spin_unlock(&br->lock);

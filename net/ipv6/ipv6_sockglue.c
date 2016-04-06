@@ -253,6 +253,12 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 		retv = 0;
 		break;
 
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+    case TI_IPV6_PKTINFO:
+		np->rxopt.bits.ti_rxinfo = valbool;
+		retv = 0;
+		break;
+#endif
 	case IPV6_RECVHOPLIMIT:
 		if (optlen < sizeof(int))
 			goto e_inval;
@@ -1026,7 +1032,11 @@ static int do_ipv6_getsockopt(struct sock *sk, int level, int optname,
 	case IPV6_RECVPKTINFO:
 		val = np->rxopt.bits.rxinfo;
 		break;
-
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+    case TI_IPV6_PKTINFO:
+		val = np->rxopt.bits.ti_rxinfo;
+		break;
+#endif
 	case IPV6_2292PKTINFO:
 		val = np->rxopt.bits.rxoinfo;
 		break;

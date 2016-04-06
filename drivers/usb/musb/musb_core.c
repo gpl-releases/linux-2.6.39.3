@@ -219,82 +219,118 @@ static struct otg_io_access_ops musb_ulpi_access = {
 /*
  * Load an endpoint's FIFO
  */
-void musb_write_fifo(struct musb_hw_ep *hw_ep, u16 len, const u8 *src)
+static void musb_fifo_io(u8 * fifo, u8 * buf, u16 len, char is_read)
 {
-	void __iomem *fifo = hw_ep->fifo;
+        u16 index = 0;
+        /* protection from infinite loop */
+        if (len == 0) return;
 
-	prefetch((u8 *)src);
-
-	DBG(4, "%cX ep%d fifo %p count %d buf %p\n",
-			'T', hw_ep->epnum, fifo, len, src);
-
-	/* we can't assume unaligned reads work */
-	if (likely((0x01 & (unsigned long) src) == 0)) {
-		u16	index = 0;
-
-		/* best case is 32bit-aligned source address */
-		if ((0x02 & (unsigned long) src) == 0) {
-			if (len >= 4) {
-				writesl(fifo, src + index, len >> 2);
-				index += len & ~0x03;
-			}
-			if (len & 0x02) {
-				musb_writew(fifo, 0, *(u16 *)&src[index]);
-				index += 2;
-			}
-		} else {
-			if (len >= 2) {
-				writesw(fifo, src + index, len >> 1);
-				index += len & ~0x01;
-			}
-		}
-		if (len & 0x01)
-			musb_writeb(fifo, 0, src[index]);
-	} else  {
-		/* byte aligned */
-		writesb(fifo, src, len);
-	}
-}
-
-#if !defined(CONFIG_USB_MUSB_AM35X)
-/*
- * Unload an endpoint's FIFO
- */
-void musb_read_fifo(struct musb_hw_ep *hw_ep, u16 len, u8 *dst)
-{
-	void __iomem *fifo = hw_ep->fifo;
-
-	DBG(4, "%cX ep%d fifo %p count %d buf %p\n",
-			'R', hw_ep->epnum, fifo, len, dst);
-
-	/* we can't assume unaligned writes work */
-	if (likely((0x01 & (unsigned long) dst) == 0)) {
-		u16	index = 0;
-
-		/* best case is 32bit-aligned destination address */
-		if ((0x02 & (unsigned long) dst) == 0) {
-			if (len >= 4) {
-				readsl(fifo, dst, len >> 2);
-				index = len & ~0x03;
-			}
-			if (len & 0x02) {
-				*(u16 *)&dst[index] = musb_readw(fifo, 0);
-				index += 2;
-			}
-		} else {
-			if (len >= 2) {
-				readsw(fifo, dst, len >> 1);
-				index = len & ~0x01;
-			}
-		}
-		if (len & 0x01)
-			dst[index] = musb_readb(fifo, 0);
-	} else  {
-		/* byte aligned */
-		readsb(fifo, dst, len);
-	}
-}
+        char size = ((unsigned long)buf & 0x04) ? 4 :
+            ((unsigned long)buf & 0x02) ? 2 : 1;
+#ifndef CONFIG_CPU_LITTLE_ENDIAN
+        u32 *pTemp = (u32 *) buf;
+        u16 *pTmp16 = (u16 *) buf;
 #endif
+        size = (len >= size) ? size : (len >= (size >> 1)) ? (size >> 1) : 1;
+        if (size == 1) {
+                if (is_read)
+                        readsb(fifo, (void *__iomem)buf, len);
+                        else
+                        writesb(fifo, (void *__iomem)buf, len);
+                return;
+        }
+#ifndef CONFIG_CPU_LITTLE_ENDIAN
+        while (len >= size) {
+                switch (size) {
+                case 4:
+                        if (is_read)
+                                *pTemp = cpu_to_le32(*(u32 *) fifo);
+                        else
+                                *(u32 *) fifo = cpu_to_le32(*pTemp);
+                        pTemp++;
+                        break;
+                case 2:
+                        if (is_read)
+                                *pTmp16 = cpu_to_le16(*(u16 *) fifo);
+                        else
+                                *(u16 *) fifo = cpu_to_le16(*pTmp16);
+                        pTmp16++;
+                        break;
+                }
+                len -= size;
+                index += size;
+        }
+#else
+        switch (size) {
+        case 4:
+                if (is_read)
+                        readsl(fifo, buf, len >> 2);
+                else
+                        writesl(fifo, (void *__iomem)(buf), len >> 2);
+                index += len & ~0x03;
+                break;
+        case 2:
+                if (is_read)
+                        readsw(fifo, buf, len >> 1);
+                 else
+                        writesw(fifo, (void *__iomem)(buf), len >> 1);
+                index += len & ~0x01;
+                break;
+        }
+#endif
+        if (len & 0x02) {
+                if (is_read)
+                        *(u16 *) & buf[index] =
+                            cpu_to_le16(musb_readw(fifo, 0));
+                else
+                        musb_writew(fifo, 0,
+                                    cpu_to_le16(*(u16 *) & buf[index]));
+                index += 2;
+        }
+                if (len & 0x01) {
+                if (is_read)
+                        buf[index] = musb_readb(fifo, 0);
+                else
+                        musb_writeb(fifo, 0, buf[index]);
+        }
+}
+void musb_write_fifo(struct musb_hw_ep *hw_ep, u16 wCount, const u8 * pSource)
+{
+        void __iomem *fifo = hw_ep->fifo;
+        prefetch((u8 *) pSource);
+        DBG(4, "%cX ep%d fifo %p count %d buf %p\n",
+            'T', hw_ep->epnum, fifo, wCount, pSource);
+       /* we can't assume unaligned reads work */
+        if (likely((0x01 & (unsigned long)pSource) == 0)) {
+                /* best case is 32bit-aligned source address */
+                if ((0x02 & (unsigned long)pSource) == 0) {
+                        musb_fifo_io(fifo, (u8 *) pSource, wCount, 0);
+                } else {
+                        musb_fifo_io(fifo, (u8 *) pSource, wCount, 0);
+                }
+        } else {
+                musb_fifo_io(fifo, (u8 *) pSource, wCount, 0);
+        }
+}
+
+void musb_read_fifo(struct musb_hw_ep *hw_ep, u16 wCount, u8 * pDest)
+{
+        void __iomem *fifo = hw_ep->fifo;
+        DBG(4, "%cX ep%d fifo %p count %d buf %p\n",
+            'R', hw_ep->epnum, fifo, wCount, pDest);
+
+        /* we can't assume unaligned writes work */
+        if (likely((0x01 & (unsigned long)pDest) == 0)) {
+                /* best case is 32bit-aligned destination address */
+                if ((0x02 & (unsigned long)pDest) == 0) {
+                        musb_fifo_io(fifo, pDest, wCount, 1);
+                } else {
+                        musb_fifo_io(fifo, pDest, wCount, 1);
+                }
+        } else {
+                musb_fifo_io(fifo, pDest, wCount, 1);
+        }
+}
 
 #endif	/* normal PIO */
 
@@ -1958,7 +1994,7 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 		status = -ENOMEM;
 		goto fail0;
 	}
-
+	
 	pm_runtime_use_autosuspend(musb->controller);
 	pm_runtime_set_autosuspend_delay(musb->controller, 200);
 	pm_runtime_enable(musb->controller);
@@ -1994,7 +2030,7 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 		musb->xceiv->io_priv = musb->mregs;
 		musb->xceiv->io_ops = &musb_ulpi_access;
 	}
-
+    
 #ifndef CONFIG_MUSB_PIO_ONLY
 	if (use_dma && dev->dma_mask) {
 		struct dma_controller	*c;
@@ -2173,11 +2209,12 @@ static int __init musb_probe(struct platform_device *pdev)
 		return -ENODEV;
 
 	base = ioremap(iomem->start, resource_size(iomem));
+	base = (void *)iomem->start;	
 	if (!base) {
 		dev_err(dev, "ioremap failed\n");
 		return -ENOMEM;
 	}
-
+	
 #ifndef CONFIG_MUSB_PIO_ONLY
 	/* clobbered by use_dma=n */
 	orig_dma_mask = dev->dma_mask;

@@ -163,7 +163,7 @@ config USB_INVENTRA_DMA
 config USB_TI_CPPI_DMA
 	bool
 	depends on USB_MUSB_HDRC && !MUSB_PIO_ONLY
-	default USB_MUSB_DAVINCI
+	default (USB_MUSB_DAVINCI || MACH_PUMA5 )
 	help
 	  Enable DMA transfers when TI CPPI DMA is available.
 

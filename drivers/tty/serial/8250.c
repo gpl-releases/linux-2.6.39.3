@@ -18,6 +18,26 @@
  *  membase is an 'ioremapped' cookie.
  */
 
+/* Copyright 2008, Texas Instruments Incorporated
+ *
+ * This program has been modified from its original operation by Texas Instruments
+ * to do the following:
+ * 1) Set uartclk in serial8250_resume_port to support arm frequency change in
+ * Puma5.
+ *
+ * THIS MODIFIED SOFTWARE AND DOCUMENTATION ARE PROVIDED
+ * "AS IS," AND TEXAS INSTRUMENTS MAKES NO REPRESENTATIONS
+ * OR WARRENTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+ * TO, WARRANTIES OF MERCHANTABILITY OR FITNESS FOR ANY
+ * PARTICULAR PURPOSE OR THAT THE USE OF THE SOFTWARE OR
+ * DOCUMENTATION WILL NOT INFRINGE ANY THIRD PARTY PATENTS,
+ * COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS.
+ * See The GNU General Public License for more details.
+ *
+ * These changes are covered under version 2 of the GNU General Public License,
+ * dated June 1991.
+ */
+
 #if defined(CONFIG_SERIAL_8250_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
 #define SUPPORT_SYSRQ
 #endif
@@ -49,6 +69,7 @@
 #ifdef CONFIG_SPARC
 #include "suncore.h"
 #endif
+#include <asm-arm/arch-avalanche/generic/pal.h>
 
 /*
  * Configuration:
@@ -67,6 +88,19 @@ static int serial_index(struct uart_port *port)
 }
 
 static unsigned int skip_txen_test; /* force skip of txen test at init time */
+
+
+#if 1 /* (SA_CUSTOM)*/
+#ifndef ConsoleSecurity
+#define ConsoleSecurity
+#endif
+
+#ifdef ConsoleSecurity
+extern int irwChoice;
+
+#endif
+#endif
+
 
 /*
  * Debugging.
@@ -303,6 +337,13 @@ static const struct serial8250_config uart_config[] = {
 		.fcr		= UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10,
 		.flags		= UART_CAP_FIFO | UART_CAP_AFE,
 	},
+    [PORT_TI_16550A] = {
+	.name		= "TI 16550A",
+	.fifo_size	= 16,
+	.tx_loadsz	= 16,
+	.fcr		= UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10,
+	.flags		= UART_CAP_FIFO | UART_CAP_UUE,
+    },
 };
 
 #if defined(CONFIG_MIPS_ALCHEMY)
@@ -1087,6 +1128,15 @@ static void autoconfig_16550a(struct uart_8250_port *up)
 	 * already a 1 and maybe locked there before we even start start.
 	 */
 	iersave = serial_in(up, UART_IER);
+    
+    /* TI default UART_IER upper nibble to 0 */
+    if((iersave & 0xF0) == 0) {
+		DEBUG_AUTOCONF("TI 16550A");
+		up->port.type = PORT_TI_16550A;
+		up->capabilities |= UART_CAP_UUE;
+	return;
+    }
+
 	serial_outp(up, UART_IER, iersave & ~UART_IER_UUE);
 	if (!(serial_in(up, UART_IER) & UART_IER_UUE)) {
 		/*
@@ -1448,7 +1498,19 @@ receive_chars(struct uart_8250_port *up, unsigned int *status)
 			 */
 			ch = 0;
 
+
+#if 1 /*(SA_CUSTOM)*/
+#ifdef ConsoleSecurity
+        if (irwChoice ==0)
+            flag = TTY_BREAK;
+        if (irwChoice ==1)
+            flag = TTY_BREAK;
+        if (irwChoice ==2)
+            flag = TTY_NORMAL;
+#endif
+#else // ori
 		flag = TTY_NORMAL;
+#endif
 		up->port.icount.rx++;
 
 		lsr |= up->lsr_saved_flags;
@@ -1525,7 +1587,12 @@ static void transmit_chars(struct uart_8250_port *up)
 
 	count = up->tx_loadsz;
 	do {
+#if 1 /*(SA_CUSTOM) && defined(ConsoleSecurity)   */
+                if (irwChoice != 0)
+#endif
+                { 
 		serial_out(up, UART_TX, xmit->buf[xmit->tail]);
+                }
 		xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
 		up->port.icount.tx++;
 		if (uart_circ_empty(xmit))
@@ -1632,7 +1699,7 @@ static irqreturn_t serial8250_interrupt(int irq, void *dev_id)
 			 * interrupt meaning an LCR write attempt occurred while the
 			 * UART was busy. The interrupt must be cleared by reading
 			 * the UART status register (USR) and the LCR re-written. */
-			unsigned int status;
+			volatile u32 status;
 			status = *(volatile u32 *)up->port.private_data;
 			serial_out(up, UART_LCR, up->lcr);
 
@@ -2836,7 +2903,7 @@ static void serial8250_console_putchar(struct uart_port *port, int ch)
 	struct uart_8250_port *up =
 		container_of(port, struct uart_8250_port, port);
 
-	wait_for_xmitr(up, UART_LSR_THRE);
+	wait_for_xmitr(up, BOTH_EMPTY);
 	serial_out(up, UART_TX, ch);
 }
 
@@ -3036,7 +3103,12 @@ void serial8250_suspend_port(int line)
 void serial8250_resume_port(int line)
 {
 	struct uart_8250_port *up = &serial8250_ports[line];
-
+#if defined (CONFIG_MACH_PUMA5)
+        extern unsigned int avalanche_get_vbus_freq(void);
+        serial8250_ports[line].port.uartclk = avalanche_get_vbus_freq ();
+#else /* CONFIG_MACH_PUMA6  For Puma-6 SoC */
+        serial8250_ports[line].port.uartclk = PAL_sysClkcGetFreq(PAL_SYS_CLKC_UART0);
+#endif
 	if (up->capabilities & UART_NATSEMI) {
 		/* Ensure it's still in high speed mode */
 		serial_outp(up, UART_LCR, 0xE0);

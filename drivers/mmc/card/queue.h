@@ -1,3 +1,11 @@
+/******************************************************************
+ 
+ Includes Intel Corporation's changes/modifications dated: 07/2011.
+ Changed/modified portions - Copyright(c) 2011, Intel Corporation. 
+
+******************************************************************/
+
+
 #ifndef MMC_QUEUE_H
 #define MMC_QUEUE_H
 
@@ -14,6 +22,10 @@ struct mmc_queue {
 	void			*data;
 	struct request_queue	*queue;
 	struct scatterlist	*sg;
+#ifdef CONFIG_ARCH_GEN3
+	char			*bp_buf;
+	struct scatterlist	*bp_sg;
+#endif
 	char			*bounce_buf;
 	struct scatterlist	*bounce_sg;
 	unsigned int		bounce_sg_len;

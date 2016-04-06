@@ -49,6 +49,9 @@ sdhci-platform-$(CONFIG_MMC_SDHCI_CNS3XXX)	+= sdhci-cns3xxx.o
 sdhci-platform-$(CONFIG_MMC_SDHCI_ESDHC_IMX)	+= sdhci-esdhc-imx.o
 sdhci-platform-$(CONFIG_MMC_SDHCI_DOVE)		+= sdhci-dove.o
 sdhci-platform-$(CONFIG_MMC_SDHCI_TEGRA)	+= sdhci-tegra.o
+sdhci-platform-$(CONFIG_MMC_SDHCI_PUMA6)	+= sdhci-puma6.o
+
+
 
 obj-$(CONFIG_MMC_SDHCI_OF)	+= sdhci-of.o
 sdhci-of-y				:= sdhci-of-core.o

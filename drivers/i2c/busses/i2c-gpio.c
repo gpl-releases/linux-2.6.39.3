@@ -15,7 +15,25 @@
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 
-#include <asm/gpio.h>
+//#include <asm/gpio.h>
+#include <asm-arm/arch-avalanche/puma6/puma6_gpio_ctrl.h>
+
+/* functions defined in i2c-bit-algo.c */
+extern int  gpio_direction_input (unsigned gpio);
+extern int  gpio_direction_output(unsigned gpio, int value);
+extern int  gpio_get_value       (unsigned gpio);
+extern void gpio_set_value       (unsigned gpio, int value);
+extern int  gpio_request         (unsigned gpio, const char *label);
+extern void gpio_free            (unsigned gpio);
+
+static struct i2c_gpio_platform_data gpio_state =
+{
+    .sda_pin = 45, /*0x2d */
+    .scl_pin = 44, /*0x2c */
+    .udelay  = 1,
+};
+
+static struct platform_device *i2c_gpio_device;
 
 /* Toggle SDA by changing the direction of the pin */
 static void i2c_gpio_setsda_dir(void *data, int state)
@@ -87,35 +105,59 @@ static int __devinit i2c_gpio_probe(struct platform_device *pdev)
 
 	pdata = pdev->dev.platform_data;
 	if (!pdata)
-		return -ENXIO;
+    {
+        pdev->dev.platform_data = (void *)&gpio_state;
+        pdata = &gpio_state;
+        printk( KERN_ERR " no platform_data, using static structure\n" );
+    }
 
 	ret = -ENOMEM;
 	adap = kzalloc(sizeof(struct i2c_adapter), GFP_KERNEL);
 	if (!adap)
+    {
+        printk( KERN_ERR " could not allocate i2c_adapter structure\n" );
 		goto err_alloc_adap;
+    }
+
 	bit_data = kzalloc(sizeof(struct i2c_algo_bit_data), GFP_KERNEL);
 	if (!bit_data)
+    {
+        printk( KERN_ERR " could not allocate i2c_algp_bit_data structure\n" );
 		goto err_alloc_bit_data;
+    }
 
 	ret = gpio_request(pdata->sda_pin, "sda");
 	if (ret)
+    {
+        printk( KERN_ERR "gpio_request for sda failed\n" );
 		goto err_request_sda;
+    }
+
 	ret = gpio_request(pdata->scl_pin, "scl");
 	if (ret)
+    {
+        printk( KERN_ERR "gpio_request for scl failed\n" );
 		goto err_request_scl;
+    }
 
-	if (pdata->sda_is_open_drain) {
+	if (pdata->sda_is_open_drain) 
+    {
 		gpio_direction_output(pdata->sda_pin, 1);
 		bit_data->setsda = i2c_gpio_setsda_val;
-	} else {
+	} 
+    else 
+    {
 		gpio_direction_input(pdata->sda_pin);
 		bit_data->setsda = i2c_gpio_setsda_dir;
 	}
 
-	if (pdata->scl_is_open_drain || pdata->scl_is_output_only) {
+	if (pdata->scl_is_open_drain || pdata->scl_is_output_only) 
+    {
 		gpio_direction_output(pdata->scl_pin, 1);
 		bit_data->setscl = i2c_gpio_setscl_val;
-	} else {
+	} 
+    else 
+    {
 		gpio_direction_input(pdata->scl_pin);
 		bit_data->setscl = i2c_gpio_setscl_dir;
 	}
@@ -149,11 +191,14 @@ static int __devinit i2c_gpio_probe(struct platform_device *pdev)
 	 * The reason to do so is to avoid sysfs names that only make
 	 * sense when there are multiple adapters.
 	 */
-	adap->nr = (pdev->id != -1) ? pdev->id : 0;
+    adap->nr = (pdev->id != -1) ? pdev->id : 1; /* for puma6 i2c-0 is used for a 'real' i2c controller */
+
 	ret = i2c_bit_add_numbered_bus(adap);
 	if (ret)
+    {
+        printk( KERN_ERR " i2c_bit_add_numbered_bus failed, return=0x%x\n", ret );
 		goto err_add_bus;
-
+    }
 	platform_set_drvdata(pdev, adap);
 
 	dev_info(&pdev->dev, "using pins %u (SDA) and %u (SCL%s)\n",
@@ -192,9 +237,11 @@ static int __devexit i2c_gpio_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#define I2C_GPIO_NAME "i2c-gpio"
+
 static struct platform_driver i2c_gpio_driver = {
 	.driver		= {
-		.name	= "i2c-gpio",
+		.name	= I2C_GPIO_NAME,
 		.owner	= THIS_MODULE,
 	},
 	.probe		= i2c_gpio_probe,
@@ -205,17 +252,49 @@ static int __init i2c_gpio_init(void)
 {
 	int ret;
 
-	ret = platform_driver_register(&i2c_gpio_driver);
-	if (ret)
-		printk(KERN_ERR "i2c-gpio: probe failed: %d\n", ret);
+    /* Allocate device */
+    i2c_gpio_device = platform_device_alloc( I2C_GPIO_NAME, -1 );
+    if ( i2c_gpio_device )
+    {
+        /* initialize device structure */
+        i2c_gpio_device->dev.platform_data = (void *)&gpio_state;
+        i2c_gpio_device->id                = 1;
+
+        ret = platform_device_add( i2c_gpio_device );
+        if ( ret == 0 )
+        {
+            ret = platform_driver_register( &i2c_gpio_driver );
+            if ( ret == 0 )
+            {
+                /* success */
+            }
+            else
+            {
+                printk( KERN_ERR "i2c-gpio: platform_driver_register failed\n" );
+                platform_device_del( i2c_gpio_device );
+            }
+        }
+        else
+        {
+            printk( KERN_ERR "i2c-gpio: platform_device_add failed.\n" );
+        }
+    }
+    else
+    {
+        printk(KERN_ERR "i2c-gpio: platform_device_alloc failed.\n");
+        ret = -ENOMEM;
+    }
 
 	return ret;
 }
+
+
 subsys_initcall(i2c_gpio_init);
 
 static void __exit i2c_gpio_exit(void)
 {
 	platform_driver_unregister(&i2c_gpio_driver);
+    platform_device_del( i2c_gpio_device );
 }
 module_exit(i2c_gpio_exit);
 
@@ -223,3 +302,4 @@ MODULE_AUTHOR("Haavard Skinnemoen <hskinnemoen@atmel.com>");
 MODULE_DESCRIPTION("Platform-independent bitbanging I2C driver");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:i2c-gpio");
+

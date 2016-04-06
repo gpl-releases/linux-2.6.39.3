@@ -379,6 +379,39 @@ config SPI_TI_SSP
 	  To compile this driver as a module, choose M here: the
 	  module will be called ti-ssp-spi.
 
+config SPI_TI_CODEC
+	bool "SPI interface in TI Codec implementation"
+	depends on SPI_MASTER && ARCH_AVALANCHE
+	help
+	  SPI master controller in TI Codec implementation.
+
+choice
+    prompt "SPI Operating Mode"
+    depends on ARCH_AVALANCHE && SPI 
+    default SPI_POLLING_MODE
+    help
+      Specifies the operating mode. Available mode - Pure Interrupt,
+      Polling and tasklet
+
+config SPI_INTERRUPT_MODE
+    boolean "SPI Pure Interrupt Mode"
+    help
+      Works in pure interrupt mode. Interrupts will be generated for
+      every word.
+
+config SPI_TASKLET_MODE
+    boolean "SPI Tasklet Mode"
+    help
+      Works in tasklet mode. Only one interrupt will be generated for
+      each transfer and the remaining transfer happens in a tasklet
+
+config SPI_POLLING_MODE
+    boolean "SPI Polling Mode"
+    help
+      Works in polling mode. (Not recommended)
+
+endchoice
+
 config SPI_TOPCLIFF_PCH
 	tristate "Topcliff PCH SPI Controller"
 	depends on PCI

@@ -39,6 +39,8 @@
 #include <linux/jiffies.h>
 #include <linux/uaccess.h>
 
+#define MAX_TRANSACTION_SIZE (8*1024)
+
 /*
  * An i2c_dev represents an i2c_adapter ... an I2C or SMBus master, not a
  * slave (i2c_client) with which messages will be exchanged.  It's coupled
@@ -139,8 +141,8 @@ static ssize_t i2cdev_read(struct file *file, char __user *buf, size_t count,
 
 	struct i2c_client *client = file->private_data;
 
-	if (count > 8192)
-		count = 8192;
+	if (count > MAX_TRANSACTION_SIZE)
+		count = MAX_TRANSACTION_SIZE;
 
 	tmp = kmalloc(count, GFP_KERNEL);
 	if (tmp == NULL)
@@ -163,8 +165,8 @@ static ssize_t i2cdev_write(struct file *file, const char __user *buf,
 	char *tmp;
 	struct i2c_client *client = file->private_data;
 
-	if (count > 8192)
-		count = 8192;
+	if (count > MAX_TRANSACTION_SIZE)
+		count = MAX_TRANSACTION_SIZE;
 
 	tmp = memdup_user(buf, count);
 	if (IS_ERR(tmp))

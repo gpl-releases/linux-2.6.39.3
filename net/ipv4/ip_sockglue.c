@@ -50,10 +50,44 @@
 #define IP_CMSG_RETOPTS		16
 #define IP_CMSG_PASSSEC		32
 #define IP_CMSG_ORIGDSTADDR     64
-
+/*
+* TI Extension:
+*   The shift into the bit mask
+*/
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+#define TI_IP_CMSG_PKTINFO		128
+#endif
 /*
  *	SOL_IP control messages.
  */
+
+/*
+* TI Extension:
+*
+* Function:
+*    ip_cmsg_recv_ti_pktinfo(struct msghdr *msg, struct sk_buff *skb)
+*
+*  Decsription:
+*   The function fills the ti_pktinfo structure for the
+*   sending relevant information to the user 
+*/
+ 
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+static void ip_cmsg_recv_ti_pktinfo(struct msghdr *msg, struct sk_buff *skb)
+{
+    struct ti_pktinfo info;
+    struct ethhdr *ehdr;
+#ifdef CONFIG_TI_META_DATA
+    info.ifcpe_side = skb->ti_meta_info;
+#endif	
+    ehdr = eth_hdr(skb);
+    memcpy( info.mac_addr, ehdr->h_source, sizeof(info.mac_addr));
+#ifdef CONFIG_TI_META_DATA
+    skb->ti_meta_info=0;
+#endif
+    put_cmsg(msg, SOL_IP, TI_IP_PKTINFO, sizeof(info), &info);
+}
+#endif
 
 static void ip_cmsg_recv_pktinfo(struct msghdr *msg, struct sk_buff *skb)
 {
@@ -189,6 +223,13 @@ void ip_cmsg_recv(struct msghdr *msg, struct sk_buff *skb)
 	if (flags & 1)
 		ip_cmsg_recv_dstaddr(msg, skb);
 
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+    if ((flags>>=1) == 0)
+		return;
+	if (flags & 1)
+		ip_cmsg_recv_ti_pktinfo(msg, skb);
+#endif
+
 }
 EXPORT_SYMBOL(ip_cmsg_recv);
 
@@ -220,6 +261,35 @@ int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc)
 			ipc->addr = info->ipi_spec_dst.s_addr;
 			break;
 		}
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+                case TI_IP_PKTINFO:
+                {
+                printk("TI_IP_PKTINFO option is off\n");
+                return -EINVAL;
+                }
+#endif
+
+#ifdef CONFIG_TI_META_DATA
+        case TI_IP_META_DATA:
+        {
+            unsigned int* ptr_meta_info;
+
+            /* Validate the length. */
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(unsigned int)))
+				return -EINVAL;
+
+            /* Store the meta data into the cookie. */
+            ptr_meta_info = (unsigned int *)CMSG_DATA(cmsg);
+            ipc->ti_meta_info = *ptr_meta_info;
+
+            /* Print the Message on the console indicating that the kernel
+             * succesfully received the meta-data information from user-space. */
+#ifdef CONFIG_TI_META_DATA_CONSOLE_DUMP
+            printk ("Received Meta-Data:0x%x\n", ipc->ti_meta_info);
+#endif /* CONFIG_TI_META_DATA_CONSOLE_DUMP */
+            break;
+        }
+#endif /* CONFIG_TI_META_DATA */
 		default:
 			return -EINVAL;
 		}
@@ -469,7 +539,11 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			     (1<<IP_MTU_DISCOVER) | (1<<IP_RECVERR) |
 			     (1<<IP_ROUTER_ALERT) | (1<<IP_FREEBIND) |
 			     (1<<IP_PASSSEC) | (1<<IP_TRANSPARENT) |
-			     (1<<IP_MINTTL) | (1<<IP_NODEFRAG))) ||
+			     (1<<IP_MINTTL) | (1<<IP_NODEFRAG)
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+                |(1<<TI_IP_PKTINFO)
+#endif
+		)) ||
 	    optname == IP_MULTICAST_TTL ||
 	    optname == IP_MULTICAST_ALL ||
 	    optname == IP_MULTICAST_LOOP ||
@@ -531,6 +605,15 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		else
 			inet->cmsg_flags &= ~IP_CMSG_PKTINFO;
 		break;
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+        case TI_IP_PKTINFO:
+            if (val)
+				inet->cmsg_flags |= TI_IP_CMSG_PKTINFO;
+			else
+				inet->cmsg_flags &= ~TI_IP_CMSG_PKTINFO;
+            
+			break;
+#endif
 	case IP_RECVTTL:
 		if (val)
 			inet->cmsg_flags |=  IP_CMSG_TTL;
@@ -1104,6 +1187,12 @@ static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 	case IP_PKTINFO:
 		val = (inet->cmsg_flags & IP_CMSG_PKTINFO) != 0;
 		break;
+
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+        case TI_IP_PKTINFO:
+			val = (inet->cmsg_flags & TI_IP_CMSG_PKTINFO) != 0;
+			break;
+#endif
 	case IP_RECVTTL:
 		val = (inet->cmsg_flags & IP_CMSG_TTL) != 0;
 		break;
@@ -1237,6 +1326,15 @@ static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 			info.ipi_ifindex = inet->mc_index;
 			put_cmsg(&msg, SOL_IP, IP_PKTINFO, sizeof(info), &info);
 		}
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+           if (inet->cmsg_flags & TI_IP_CMSG_PKTINFO) {
+                /* struct ti_pktinfo info;
+	            info.ifcpe_side = inet->mc_index;  
+                put_cmsg(&msg, SOL_IP, TI_IP_PKTINFO, sizeof(info), &info); */
+                printk("TI_IP_PKTINFO option is close in this mode\n");
+				return -ENOPROTOOPT;
+            }
+#endif
 		if (inet->cmsg_flags & IP_CMSG_TTL) {
 			int hlim = inet->mc_ttl;
 			put_cmsg(&msg, SOL_IP, IP_TTL, sizeof(hlim), &hlim);

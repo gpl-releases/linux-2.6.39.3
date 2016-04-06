@@ -27,9 +27,79 @@
 #include <linux/init.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
+#include <linux/semaphore.h>
+#include <linux/spinlock.h>
 #include <linux/i2c.h>
 #include <linux/i2c-algo-bit.h>
+#include <asm-arm/arch-avalanche/puma6/hw_mutex_ctrl.h>
+#include <asm-arm/arch-avalanche/puma6/puma6_gpio_ctrl.h>
 
+/* externs shared with puma6_gpio_ctrl.c */
+struct semaphore gpioSem;
+EXPORT_SYMBOL(gpioSem);
+DEFINE_SPINLOCK(gpioSemSpinlock);
+EXPORT_SYMBOL(gpioSemSpinlock);
+bool gpioSemaphoreInitialized = false;
+EXPORT_SYMBOL(gpioSemaphoreInitialized);
+
+/* gpio functions. Mostly do nothing */
+int  gpio_direction_input (unsigned gpio);
+int  gpio_direction_output(unsigned gpio, int value);
+int  gpio_get_value       (unsigned gpio);
+void gpio_set_value       (unsigned gpio, int value);
+int  gpio_request         (unsigned gpio, const char *label);
+void gpio_free            (unsigned gpio);
+
+/* macros for manipulating the gpio pins directly as calling the Intel functions */
+/* in puma6_gpio_ctrl.c directly leads to unacceptably slow performance          */
+#define PUMA6_GPIO_REG_GET(reg)                   (*((volatile unsigned int *)(reg)))
+#define PUMA6_GPIO_REG_SET(reg, val)              ((*((volatile unsigned int *)(reg))) = (val))
+
+#define __scllo__(adap) \
+{ \
+    PUMA6_GPIO_REG_SET(0xdffe0490, 0x00100000 ); \
+    PUMA6_GPIO_REG_SET(0xdffe0424, PUMA6_GPIO_REG_GET(0xdffe0424) | (0x00100000) ); \
+    /*ndelay(NDELAY);*/ \
+}
+
+#define __sclhi__(adap) \
+{ \
+    /* write register twice so that clock line will stay high for at least 500 ns */ \
+    PUMA6_GPIO_REG_SET(0xdffe0424, (PUMA6_GPIO_REG_GET(0xdffe0424) & (~0x00100000) ) ); \
+    PUMA6_GPIO_REG_SET(0xdffe0424, (PUMA6_GPIO_REG_GET(0xdffe0424) & (~0x00100000) ) ); \
+    /*ndelay(NDELAY)*/; \
+}
+
+#define __setsda__(adap,bit) \
+{ \
+    if ((bit)) \
+        PUMA6_GPIO_REG_SET(0xdffe0494, 0x00200000 ); \
+    else \
+        PUMA6_GPIO_REG_SET(0xdffe0490, 0x00200000 ); \
+    PUMA6_GPIO_REG_SET(0xdffe0424, PUMA6_GPIO_REG_GET(0xdffe0424) | (0x00200000) ); \
+}
+
+#define __setscl__(adap,bit) \
+{ \
+    if (bit ) \
+        PUMA6_GPIO_REG_SET(0xdffe0494, 0x00100000 ); \
+    else \
+        PUMA6_GPIO_REG_SET(0xdffe0490, 0x00100000 ); \
+    PUMA6_GPIO_REG_SET(0xdffe0424, PUMA6_GPIO_REG_GET(0xdffe0424) | (0x00100000) ); \
+}
+
+#define __sdahi__(adap) \
+{ \
+    PUMA6_GPIO_REG_SET(0xdffe0424, (PUMA6_GPIO_REG_GET(0xdffe0424) & (~0x00200000) ) ); \
+}
+
+#define __getsda__(adap) \
+    ((PUMA6_GPIO_REG_GET(0xdffe0428) & 0x00200000) == 0x00200000)
+
+#define __getscl__(adap) \
+    ((PUMA6_GPIO_REG_GET(0xdffe0428) & 0x00100000) == 0x00100000)
+
+#define __sdalo__(adap) __setsda__((adap),0)
 
 /* ----- global defines ----------------------------------------------- */
 
@@ -57,95 +127,33 @@ MODULE_PARM_DESC(i2c_debug,
 		 "debug level - 0 off; 1 normal; 2 verbose; 3 very verbose");
 #endif
 
-/* --- setting states on the bus with the right timing: ---------------	*/
-
-#define setsda(adap, val)	adap->setsda(adap->data, val)
-#define setscl(adap, val)	adap->setscl(adap->data, val)
-#define getsda(adap)		adap->getsda(adap->data)
-#define getscl(adap)		adap->getscl(adap->data)
-
-static inline void sdalo(struct i2c_algo_bit_data *adap)
-{
-	setsda(adap, 0);
-	udelay((adap->udelay + 1) / 2);
-}
-
-static inline void sdahi(struct i2c_algo_bit_data *adap)
-{
-	setsda(adap, 1);
-	udelay((adap->udelay + 1) / 2);
-}
-
-static inline void scllo(struct i2c_algo_bit_data *adap)
-{
-	setscl(adap, 0);
-	udelay(adap->udelay / 2);
-}
-
-/*
- * Raise scl line, and do checking for delays. This is necessary for slower
- * devices.
- */
-static int sclhi(struct i2c_algo_bit_data *adap)
-{
-	unsigned long start;
-
-	setscl(adap, 1);
-
-	/* Not all adapters have scl sense line... */
-	if (!adap->getscl)
-		goto done;
-
-	start = jiffies;
-	while (!getscl(adap)) {
-		/* This hw knows how to read the clock line, so we wait
-		 * until it actually gets high.  This is safer as some
-		 * chips may hold it low ("clock stretching") while they
-		 * are processing data internally.
-		 */
-		if (time_after(jiffies, start + adap->timeout))
-			return -ETIMEDOUT;
-		cond_resched();
-	}
-#ifdef DEBUG
-	if (jiffies != start && i2c_debug >= 3)
-		pr_debug("i2c-algo-bit: needed %ld jiffies for SCL to go "
-			 "high\n", jiffies - start);
-#endif
-
-done:
-	udelay(adap->udelay);
-	return 0;
-}
-
-
 /* --- other auxiliary functions --------------------------------------	*/
 static void i2c_start(struct i2c_algo_bit_data *adap)
 {
 	/* assert: scl, sda are high */
-	setsda(adap, 0);
-	udelay(adap->udelay);
-	scllo(adap);
+	__setsda__(adap, 0);
+//	ndelay(NDELAY);
+	__scllo__(adap);
 }
 
 static void i2c_repstart(struct i2c_algo_bit_data *adap)
 {
 	/* assert: scl is low */
-	sdahi(adap);
-	sclhi(adap);
-	setsda(adap, 0);
-	udelay(adap->udelay);
-	scllo(adap);
+	__sdahi__(adap);
+	__sclhi__(adap);
+	__setsda__(adap, 0);
+//	ndelay(NDELAY);
+	__scllo__(adap);
 }
 
 
 static void i2c_stop(struct i2c_algo_bit_data *adap)
 {
 	/* assert: scl is low */
-	sdalo(adap);
-	sclhi(adap);
-	setsda(adap, 1);
-	udelay(adap->udelay);
+	__sdalo__(adap);
+	__sclhi__(adap);
+	__setsda__(adap, 1);
+//	ndelay(NDELAY);
 }
 
 
@@ -160,45 +168,29 @@ static void i2c_stop(struct i2c_algo_bit_data *adap)
 static int i2c_outb(struct i2c_adapter *i2c_adap, unsigned char c)
 {
 	int i;
-	int sb;
 	int ack;
-	struct i2c_algo_bit_data *adap = i2c_adap->algo_data;
+//	int sb;
+//	struct i2c_algo_bit_data *adap = i2c_adap->algo_data;
 
 	/* assert: scl is low */
-	for (i = 7; i >= 0; i--) {
-		sb = (c >> i) & 1;
-		setsda(adap, sb);
-		udelay((adap->udelay + 1) / 2);
-		if (sclhi(adap) < 0) { /* timed out */
-			bit_dbg(1, &i2c_adap->dev, "i2c_outb: 0x%02x, "
-				"timeout at bit #%d\n", (int)c, i);
-			return -ETIMEDOUT;
-		}
-		/* FIXME do arbitration here:
-		 * if (sb && !getsda(adap)) -> ouch! Get out of here.
-		 *
-		 * Report a unique code, so higher level code can retry
-		 * the whole (combined) message and *NOT* issue STOP.
-		 */
-		scllo(adap);
+	for (i = 7; i >= 0; i--) 
+    {
+		__setsda__(adap, (c>>i)&1);
+        __sclhi__(adap);
+		__scllo__(adap);
 	}
-	sdahi(adap);
-	if (sclhi(adap) < 0) { /* timeout */
-		bit_dbg(1, &i2c_adap->dev, "i2c_outb: 0x%02x, "
-			"timeout at ack\n", (int)c);
-		return -ETIMEDOUT;
-	}
+    /* need to check if this is really necessary */
+	__sdahi__(adap);
+    __sclhi__(adap);
+    /* */
 
 	/* read ack: SDA should be pulled down by slave, or it may
 	 * NAK (usually to report problems with the data we wrote).
 	 */
-	ack = !getsda(adap);    /* ack: sda is pulled low -> success */
-	bit_dbg(2, &i2c_adap->dev, "i2c_outb: 0x%02x %s\n", (int)c,
-		ack ? "A" : "NA");
+	ack = !__getsda__(adap);
+	__scllo__(adap);
 
-	scllo(adap);
 	return ack;
-	/* assert: scl is low (sda undef) */
 }
 
 
@@ -211,17 +203,13 @@ static int i2c_inb(struct i2c_adapter *i2c_adap)
 	struct i2c_algo_bit_data *adap = i2c_adap->algo_data;
 
 	/* assert: scl is low */
-	sdahi(adap);
+	__sdahi__(adap);
 	for (i = 0; i < 8; i++) {
-		if (sclhi(adap) < 0) { /* timeout */
-			bit_dbg(1, &i2c_adap->dev, "i2c_inb: timeout at bit "
-				"#%d\n", 7 - i);
-			return -ETIMEDOUT;
-		}
+		__sclhi__(adap);
 		indata *= 2;
-		if (getsda(adap))
+		if (__getsda__(adap))
 			indata |= 0x01;
-		setscl(adap, 0);
+		__setscl__(adap, 0);
 		udelay(i == 7 ? adap->udelay / 2 : adap->udelay);
 	}
 	/* assert: scl is low */
@@ -247,16 +235,16 @@ static int test_bus(struct i2c_adapter *i2c_adap)
 	if (adap->getscl == NULL)
 		pr_info("%s: Testing SDA only, SCL is not readable\n", name);
 
-	sda = getsda(adap);
-	scl = (adap->getscl == NULL) ? 1 : getscl(adap);
+	sda = __getsda__(adap);
+	scl = __getscl__(adap);
 	if (!scl || !sda) {
 		printk(KERN_WARNING "%s: bus seems to be busy\n", name);
 		goto bailout;
 	}
 
-	sdalo(adap);
-	sda = getsda(adap);
-	scl = (adap->getscl == NULL) ? 1 : getscl(adap);
+	__sdalo__(adap);
+	sda = __getsda__(adap);
+	scl = __getscl__(adap);
 	if (sda) {
 		printk(KERN_WARNING "%s: SDA stuck high!\n", name);
 		goto bailout;
@@ -267,9 +255,9 @@ static int test_bus(struct i2c_adapter *i2c_adap)
 		goto bailout;
 	}
 
-	sdahi(adap);
-	sda = getsda(adap);
-	scl = (adap->getscl == NULL) ? 1 : getscl(adap);
+	__sdahi__(adap);
+	sda = __getsda__(adap);
+	scl = __getscl__(adap);
 	if (!sda) {
 		printk(KERN_WARNING "%s: SDA stuck low!\n", name);
 		goto bailout;
@@ -280,9 +268,9 @@ static int test_bus(struct i2c_adapter *i2c_adap)
 		goto bailout;
 	}
 
-	scllo(adap);
-	sda = getsda(adap);
-	scl = (adap->getscl == NULL) ? 0 : getscl(adap);
+	__scllo__(adap);
+	sda = __getsda__(adap);
+	scl = __getscl__(adap);
 	if (scl) {
 		printk(KERN_WARNING "%s: SCL stuck high!\n", name);
 		goto bailout;
@@ -293,9 +281,9 @@ static int test_bus(struct i2c_adapter *i2c_adap)
 		goto bailout;
 	}
 
-	sclhi(adap);
-	sda = getsda(adap);
-	scl = (adap->getscl == NULL) ? 1 : getscl(adap);
+	__sclhi__(adap);
+	sda = __getsda__(adap);
+	scl = __getscl__(adap);
 	if (!scl) {
 		printk(KERN_WARNING "%s: SCL stuck low!\n", name);
 		goto bailout;
@@ -312,8 +300,8 @@ static int test_bus(struct i2c_adapter *i2c_adap)
 	pr_info("%s: Test OK\n", name);
 	return 0;
 bailout:
-	sdahi(adap);
-	sclhi(adap);
+	__sdahi__(adap);
+	__sclhi__(adap);
 
 	if (adap->post_xfer)
 		adap->post_xfer(i2c_adap);
@@ -399,17 +387,14 @@ static int sendbytes(struct i2c_adapter *i2c_adap, struct i2c_msg *msg)
 
 static int acknak(struct i2c_adapter *i2c_adap, int is_ack)
 {
-	struct i2c_algo_bit_data *adap = i2c_adap->algo_data;
+//	struct i2c_algo_bit_data *adap = i2c_adap->algo_data;
 
 	/* assert: sda is high */
 	if (is_ack)		/* send ack */
-		setsda(adap, 0);
-	udelay((adap->udelay + 1) / 2);
-	if (sclhi(adap) < 0) {	/* timeout */
-		dev_err(&i2c_adap->dev, "readbytes: ack/nak timeout\n");
-		return -ETIMEDOUT;
-	}
-	scllo(adap);
+		__setsda__(adap, 0);
+//	ndelay(NDELAY);
+	__sclhi__(adap);
+	__scllo__(adap);
 	return 0;
 }
 
@@ -529,7 +514,7 @@ static int bit_doAddress(struct i2c_adapter *i2c_adap, struct i2c_msg *msg)
 	return 0;
 }
 
-static int bit_xfer(struct i2c_adapter *i2c_adap,
+static int __bit_xfer(struct i2c_adapter *i2c_adap,
 		    struct i2c_msg msgs[], int num)
 {
 	struct i2c_msg *pmsg;
@@ -597,6 +582,26 @@ bailout:
 	return ret;
 }
 
+static int bit_xfer(struct i2c_adapter *i2c_adap,
+		    struct i2c_msg msgs[], int num)
+{
+    int ret = -EIO;
+
+	if ( down_interruptible(&gpioSem) )
+	{
+		return -ERESTARTSYS;
+	}
+
+    if ( ! hw_mutex_lock_interruptible( HW_MUTEX_GPIO ) )
+    {
+        ret = __bit_xfer( i2c_adap, msgs, num );
+        hw_mutex_unlock( HW_MUTEX_GPIO );
+    }
+    up(&gpioSem);
+
+    return ret;
+}
+
 static u32 bit_func(struct i2c_adapter *adap)
 {
 	return I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL |
@@ -619,7 +624,7 @@ static const struct i2c_algorithm i2c_bit_algo = {
 static int __i2c_bit_add_bus(struct i2c_adapter *adap,
 			     int (*add_adapter)(struct i2c_adapter *))
 {
-	struct i2c_algo_bit_data *bit_adap = adap->algo_data;
+//	struct i2c_algo_bit_data *bit_adap = adap->algo_data;
 	int ret;
 
 	if (bit_test) {
@@ -636,11 +641,13 @@ static int __i2c_bit_add_bus(struct i2c_adapter *adap,
 	if (ret < 0)
 		return ret;
 
+#if 0
 	/* Complain if SCL can't be read */
 	if (bit_adap->getscl == NULL) {
 		dev_warn(&adap->dev, "Not I2C compliant: can't read SCL\n");
 		dev_warn(&adap->dev, "Bus may be unreliable\n");
 	}
+#endif
 	return 0;
 }
 
@@ -656,6 +663,107 @@ int i2c_bit_add_numbered_bus(struct i2c_adapter *adap)
 }
 EXPORT_SYMBOL(i2c_bit_add_numbered_bus);
 
+/*************************************************************************************/
+
+int gpio_direction_input( unsigned gpio )
+{
+    int ret = 0;
+
+    return ret;
+}
+EXPORT_SYMBOL(gpio_direction_input);
+
+/*************************************************************************************/
+
+int gpio_direction_output( unsigned gpio, int value )
+{
+    int ret = 0;
+
+    return ret;
+}
+EXPORT_SYMBOL(gpio_direction_output);
+
+/*************************************************************************************/
+
+int gpio_get_value( unsigned gpio )
+{
+    int ret = 0;
+
+    return ret;
+}
+EXPORT_SYMBOL(gpio_get_value);
+
+/*************************************************************************************/
+
+void gpio_set_value( unsigned gpio, int value )
+{
+}
+EXPORT_SYMBOL(gpio_set_value);
+
+/*************************************************************************************/
+
+int gpio_request( unsigned gpio, const char *label )
+{
+    int ret = -EIO;
+    unsigned long _flags = 0;
+
+    spin_lock_irqsave( &gpioSemSpinlock, _flags );
+    if ( gpioSemaphoreInitialized == false )
+    {
+        sema_init(&gpioSem,1);
+        gpioSemaphoreInitialized = true;
+    }
+    spin_unlock_irqrestore( &gpioSemSpinlock, _flags );
+
+	if ( down_interruptible(&gpioSem) )
+	{
+		return -ERESTARTSYS;
+	}
+
+    if ( ! hw_mutex_lock_interruptible( HW_MUTEX_GPIO ) )
+    {
+        if ( gpio == 44 ) /*scl*/
+        {
+            __sclhi__(0);
+        }
+        else if ( gpio == 45 ) /* sda */
+        {
+            __sdahi__(0);
+        }
+        hw_mutex_unlock( HW_MUTEX_GPIO );
+
+        ret = 0;
+    }
+    up(&gpioSem);
+
+    return ret;
+}
+EXPORT_SYMBOL(gpio_request);
+
+/*************************************************************************************/
+
+void gpio_free( unsigned gpio )
+{
+    down(&gpioSem);
+    if ( ! hw_mutex_lock_interruptible( HW_MUTEX_GPIO ) )
+    {
+        if ( gpio == 44 ) /*scl*/
+        {
+            __sclhi__(0);
+        }
+        else if ( gpio == 45 ) /* sda */
+        {
+            __sdahi__(0);
+        }
+        hw_mutex_unlock( HW_MUTEX_GPIO );
+    }
+    up(&gpioSem);
+}
+EXPORT_SYMBOL(gpio_free);
+
+/*************************************************************************************/
+
 MODULE_AUTHOR("Simon G. Vogl <simon@tk.uni-linz.ac.at>");
 MODULE_DESCRIPTION("I2C-Bus bit-banging algorithm");
 MODULE_LICENSE("GPL");
+

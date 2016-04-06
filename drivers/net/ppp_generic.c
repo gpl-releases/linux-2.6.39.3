@@ -21,6 +21,10 @@
  *
  * ==FILEVERSION 20041108==
  */
+/* 
+ * Includes Intel Corporation's changes/modifications dated: [11/07/2011].
+* Changed/modified portions - Copyright © [2011], Intel Corporation.
+*/
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -93,6 +97,10 @@ struct ppp_file {
 #define PF_TO_PPP(pf)		PF_TO_X(pf, struct ppp)
 #define PF_TO_CHANNEL(pf)	PF_TO_X(pf, struct channel)
 
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+extern int ti_pp_ppp_vpid_info;
+extern int ti_pp_ppp_sid;
+#endif
 /*
  * Data structure describing one ppp unit.
  * A ppp unit corresponds to a ppp network interface device
@@ -2577,6 +2585,9 @@ ppp_create_interface(struct net *net, int unit, int *retp)
 	struct net_device *dev = NULL;
 	int ret = -ENOMEM;
 	int i;
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    int ti_pp_save_dev_padded = 0;
+#endif    
 
 	dev = alloc_netdev(sizeof(struct ppp), "", ppp_setup);
 	if (!dev)
@@ -2586,6 +2597,12 @@ ppp_create_interface(struct net *net, int unit, int *retp)
 
 	ppp = netdev_priv(dev);
 	ppp->dev = dev;
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* Inheritance at work here. We copy the VPID Information block from the parent device
+     * to the new PPP Device. */
+	memcpy((void *)&dev->vpid_block, (void *)ti_pp_ppp_vpid_info,sizeof(TI_PP_VPID));
+	ti_pp_ppp_vpid_info = 0;
+#endif //CONFIG_TI_PACKET_PROCESSOR
 	ppp->mru = PPP_MRU;
 	init_ppp_file(&ppp->file, INTERFACE);
 	ppp->file.hdrlen = PPP_HDRLEN - 2;	/* don't count proto bytes */
@@ -2634,6 +2651,23 @@ ppp_create_interface(struct net *net, int unit, int *retp)
 	/* Initialize the new ppp unit */
 	ppp->file.index = unit;
 	sprintf(dev->name, "ppp%d", unit);
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* Save the dev->padded temporarily while we overwrite with PPP Session 
+     * ID and send to HIL PP. */
+    ti_pp_save_dev_padded = dev->padded;
+
+    /* Send an event to HIL PP indicating that a new PPP interface is 
+     * being created. The HIL PP could use this info to create a VPID 
+     * and maintain an association between the PP session and VPID data 
+     * structures and the PPP interface */
+    dev->padded = ti_pp_ppp_sid;
+    ti_hil_pp_event(TI_PPP_INTERFACE_CREATED, (void *)dev);
+    ti_pp_ppp_sid = 0;
+
+    /* Restore the dev->padded to what we had saved. */
+    dev->padded = ti_pp_save_dev_padded;
+#endif //CONFIG_TI_PACKET_PROCESSOR
 
 	ret = register_netdev(dev);
 	if (ret != 0) {

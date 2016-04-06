@@ -38,6 +38,14 @@
 #include <asm/irq.h>
 #include <asm/uaccess.h>
 
+#if 1 /* (SA_CUSTOM)*/
+#ifndef ConsoleSecurity
+#define ConsoleSecurity
+#include "8250.h"
+#endif
+#endif
+
+
 /*
  * This is used to lock changes in serial line configuration.
  */
@@ -1722,13 +1730,60 @@ static int uart_proc_open(struct inode *inode, struct file *file)
 	return single_open(file, uart_proc_show, PDE(inode)->data);
 }
 
+
+
+#if 1 /* (SA_CUSTOM)*/
+static int uart_write_proc(struct file *file, const char __user *buffer, size_t count, loff_t *data)
+/*static int uart_write_proc(struct file *file, const char __user *buffer,
+                                unsigned long count, void *data) */
+{
+  int res=0;
+  char    *buf = (char *) __get_free_page(GFP_USER);
+        char *pn = NULL;
+
+  /* printk(" irwChoice = %d", irwChoice); */
+
+
+  if (!buf) return -ENOMEM;
+  res = -EINVAL;
+
+  if (count >= PAGE_SIZE) goto out;
+  res = -EFAULT;
+
+  if (copy_from_user(buf, buffer, count))
+    goto out;
+
+  buf[count] = '\0';
+
+        if ((count == 2) || (count == 1)) {
+                pn = buf;
+                irwChoice = (int)*pn - 48; // do the ascii shift, in the lack of atoi
+                printk("+++ irwChoice = %d", irwChoice);
+        }
+
+ out:
+  free_page((unsigned long)buf);
+  return res;
+}
+
+EXPORT_SYMBOL_GPL(uart_write_proc);
+#endif
+
+
+
 static const struct file_operations uart_proc_fops = {
 	.owner		= THIS_MODULE,
 	.open		= uart_proc_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= single_release,
+#if 1 /*SA_CUSTOM*/
+        .write          = uart_write_proc,
+#endif
 };
+
+
+
 #endif
 
 #if defined(CONFIG_SERIAL_CORE_CONSOLE) || defined(CONFIG_CONSOLE_POLL)
@@ -2223,7 +2278,7 @@ static void uart_poll_put_char(struct tty_driver *driver, int line, char ch)
 }
 #endif
 
-static const struct tty_operations uart_ops = {
+static  struct tty_operations uart_ops = {
 	.open		= uart_open,
 	.close		= uart_close,
 	.write		= uart_write,
@@ -2243,9 +2298,7 @@ static const struct tty_operations uart_ops = {
 	.hangup		= uart_hangup,
 	.break_ctl	= uart_break_ctl,
 	.wait_until_sent= uart_wait_until_sent,
-#ifdef CONFIG_PROC_FS
 	.proc_fops	= &uart_proc_fops,
-#endif
 	.tiocmget	= uart_tiocmget,
 	.tiocmset	= uart_tiocmset,
 	.get_icount	= uart_get_icount,

@@ -11,6 +11,7 @@ musb_hdrc-y := musb_core.o
 musb_hdrc-$(CONFIG_USB_GADGET_MUSB_HDRC)	+= musb_gadget_ep0.o musb_gadget.o
 musb_hdrc-$(CONFIG_USB_MUSB_HDRC_HCD)		+= musb_virthub.o musb_host.o
 musb_hdrc-$(CONFIG_DEBUG_FS)			+= musb_debugfs.o
+musb_hdrc-$(CONFIG_MACH_PUMA5)              += puma5.o
 
 # Hardware Glue Layer
 obj-$(CONFIG_USB_MUSB_OMAP2PLUS)		+= omap2430.o
@@ -33,7 +34,7 @@ ifneq ($(CONFIG_MUSB_PIO_ONLY),y)
 
   else
     ifeq ($(CONFIG_USB_TI_CPPI_DMA),y)
-      musb_hdrc-y		+= cppi_dma.o
+      musb_hdrc-y		+= cppi41_dma.o
 
     else
       ifeq ($(CONFIG_USB_TUSB_OMAP_DMA),y)

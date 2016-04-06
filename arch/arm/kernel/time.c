@@ -99,7 +99,7 @@ static inline void do_leds(void)
 #endif
 
 
-#ifndef CONFIG_GENERIC_CLOCKEVENTS
+/*#ifndef CONFIG_GENERIC_CLOCKEVENTS
 /*
  * Kernel system timer support.
  */
@@ -112,7 +112,8 @@ void timer_tick(void)
 	update_process_times(user_mode(get_irq_regs()));
 #endif
 }
-#endif
+/*#endif*/
+
 
 #if defined(CONFIG_PM) && !defined(CONFIG_GENERIC_CLOCKEVENTS)
 static int timer_suspend(struct sys_device *dev, pm_message_t state)

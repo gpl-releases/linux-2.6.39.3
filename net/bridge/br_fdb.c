@@ -10,6 +10,10 @@
  *	as published by the Free Software Foundation; either version
  *	2 of the License, or (at your option) any later version.
  */
+/* 
+ * Includes Intel Corporation's changes/modifications dated: [11/07/2011].
+* Changed/modified portions - Copyright © [2011], Intel Corporation.
+*/
 
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -18,6 +22,7 @@
 #include <linux/times.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/ti_hil.h>
 #include <linux/jhash.h>
 #include <linux/random.h>
 #include <linux/slab.h>
@@ -142,7 +147,24 @@ void br_fdb_cleanup(unsigned long _data)
 				continue;
 			this_timer = f->ageing_timer + delay;
 			if (time_before_eq(this_timer, jiffies))
-				fdb_delete(f);
+			{
+#ifdef CONFIG_TI_PACKET_PROCESSOR			
+                /*  Generate a HIL Packet Processor event indicating that the FDB entry 
+                 *  is being deleted. Notifications are sent only for non-local FDB 
+                 *  entries as local traffic is not accelerated through PP. */
+                if(!f->is_local)
+                    ti_hil_pp_event(TI_BRIDGE_FDB_DELETED, (void*)f);
+
+
+                /*  Check if the PP has a session alive for this FDB entry 
+                 *   ACTIVE     - DONT delete the FDB entry.
+                 *   NOT ACTIVE - Delete the FDB entry. */
+                if (!(f->ti_pp_fdb_status & TI_PP_FDB_ACTIVE))
+		    	    fdb_delete(f);
+#else
+                    fdb_delete(f);
+#endif
+			}
 			else if (time_before(this_timer, next_timer))
 				next_timer = this_timer;
 		}
@@ -332,8 +354,22 @@ static struct net_bridge_fdb_entry *fdb_create(struct hlist_head *head,
 		fdb->is_local = is_local;
 		fdb->is_static = is_local;
 		fdb->ageing_timer = jiffies;
-
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+        /* Initialize the Status flag to INACTIVE by default. If 
+         * the event TI_BRIDGE_FDB_CREATED is indeed handled, then 
+         * this flag must be set to TI_PP_FDB_ACTIVE so that it 
+         * can be synced up with PP when FDB entry expires in the 
+         * bridge. If the status flag is not set active, it is assumed 
+         * that the TI_BRIDGE_FDB_* events are not handled and thus 
+         * bridge takes complete control over the fdb entry deletion */
+        fdb->ti_pp_fdb_status = TI_PP_FDB_INACTIVE;
+#endif
 		hlist_add_head_rcu(&fdb->hlist, head);
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+        /* Indicate to the HIL layer that a non-local FDB entry has been created. */
+        if (!fdb->is_local)
+            ti_hil_pp_event(TI_BRIDGE_FDB_CREATED, (void *)fdb);
+#endif
 	}
 	return fdb;
 }
@@ -404,6 +440,10 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 			/* fastpath: update of existing entry */
 			fdb->dst = source;
 			fdb->ageing_timer = jiffies;
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+            /* Indicate to the HIL layer that an FDB entry has been updated. */
+            ti_hil_pp_event(TI_BRIDGE_FDB_CREATED, (void *)fdb);
+#endif			
 		}
 	} else {
 		spin_lock(&br->hash_lock);

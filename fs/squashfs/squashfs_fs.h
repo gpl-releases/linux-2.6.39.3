@@ -33,10 +33,19 @@
 #define SQUASHFS_METADATA_LOG		13
 
 /* default size of data blocks */
+#ifdef CONFIG_ARCH_AVALANCHE
+#define SQUASHFS_FILE_SIZE		65536
+#else
 #define SQUASHFS_FILE_SIZE		131072
+#endif
 #define SQUASHFS_FILE_LOG		17
 
+#ifdef CONFIG_ARCH_AVALANCHE
+#define SQUASHFS_FILE_MAX_SIZE		CONFIG_SQUASHFS_MAX_BLOCK_SIZE
+#else
 #define SQUASHFS_FILE_MAX_SIZE		1048576
+#endif
+
 #define SQUASHFS_FILE_MAX_LOG		20
 
 /* Max number of uids and gids */

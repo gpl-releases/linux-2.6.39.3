@@ -9,6 +9,12 @@
  *
  * Detailed information is available in Documentation/DocBook/genericirq
  */
+ 
+/* 
+ * Includes Intel Corporation's changes/modifications dated: 2012. 
+ * Changed/modified portions - Copyright © 2012 , Intel Corporation.   
+ */
+ 
 
 #include <linux/irq.h>
 #include <linux/msi.h>
@@ -203,6 +209,16 @@ void irq_disable(struct irq_desc *desc)
 		irq_state_set_masked(desc);
 	}
 }
+
+#ifdef CONFIG_MACH_PUMA6
+void irq_ack(struct irq_desc *desc)
+{
+    if (desc->irq_data.chip->irq_ack)
+    {
+        desc->irq_data.chip->irq_ack(&desc->irq_data);
+    }
+}
+#endif
 
 static inline void mask_ack_irq(struct irq_desc *desc)
 {

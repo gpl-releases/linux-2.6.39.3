@@ -10,6 +10,13 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+ 
+ /******************************************************************
+ + 
+ + Includes Intel Corporation's changes/modifications dated: 05/2012.
+ + Changed/modified portions - Copyright(c) 2012, Intel Corporation. 
+ +
+ +******************************************************************/
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -37,7 +44,11 @@
 #include "mmc_ops.h"
 #include "sd_ops.h"
 #include "sdio_ops.h"
-
+#if defined(CONFIG_ARCH_GEN3) && defined(CONFIG_HW_MUTEXES)
+#include <asm-arm/arch-avalanche/puma6/hw_mutex_ctrl.h>
+#include <asm-arm/arch-avalanche/puma6/arm_atom_mbx.h>
+#include <linux/mmc/sdhci.h>
+#endif
 static struct workqueue_struct *workqueue;
 
 /*
@@ -217,9 +228,12 @@ void mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 	mrq->done_data = &complete;
 	mrq->done = mmc_wait_done;
 
+    //printk("[PowerOn]: mmc_wait_for_req: mmc_start_request.\n");
 	mmc_start_request(host, mrq);
 
+    //printk("[PowerOn]: mmc_wait_for_req: wait_for_completion.\n");
 	wait_for_completion(&complete);
+    //printk("[PowerOn]: mmc_wait_for_req: complete.\n");
 }
 
 EXPORT_SYMBOL(mmc_wait_for_req);
@@ -497,6 +511,21 @@ int __mmc_claim_host(struct mmc_host *host, atomic_t *abort)
 		wake_up(&host->wq);
 	spin_unlock_irqrestore(&host->lock, flags);
 	remove_wait_queue(&host->wq, &wait);
+#if defined(CONFIG_ARCH_GEN3) && defined(CONFIG_HW_MUTEXES)
+	spin_lock_irqsave(&host->lock, flags);
+	/* 
+	* mmc_claim_host is the start point of a set of MMC operations.
+	* Lock HW Mutex at the first time when a task owned the controller. 
+	*/
+	if ((host->claimer == current) && (host->claim_cnt == 1)) {
+		spin_unlock_irqrestore(&host->lock, flags);
+        //printk("[PowerOn] __mmc_claim_host:  HWMUTEX ON wait....\n");
+		LOCK_EMMC_HW_MUTEX(host);
+        //printk("[PowerOn] __mmc_claim_host:  HWMUTEX ON recive.\n");
+	}
+    else
+        spin_unlock_irqrestore(&host->lock, flags);
+#endif	
 	if (!stop)
 		mmc_host_enable(host);
 	return stop;
@@ -523,6 +552,19 @@ int mmc_try_claim_host(struct mmc_host *host)
 		claimed_host = 1;
 	}
 	spin_unlock_irqrestore(&host->lock, flags);
+#if defined(CONFIG_ARCH_GEN3) && defined(CONFIG_HW_MUTEXES)
+		spin_lock_irqsave(&host->lock, flags);
+	/* Lock HW Mutex at the first time when a task owned the controller. */
+    if ((host->claimer == current) && (host->claim_cnt == 1)) {
+        spin_unlock_irqrestore(&host->lock, flags);
+        //printk("[PowerOn] mmc_try_claim_host:  HWMUTEX ON  wait...\n");
+        LOCK_EMMC_HW_MUTEX(host);
+        //printk("[PowerOn] mmc_try_claim_host:  HWMUTEX ON recive.\n");
+	}
+    else
+        spin_unlock_irqrestore(&host->lock, flags);
+#endif	
+
 	return claimed_host;
 }
 EXPORT_SYMBOL(mmc_try_claim_host);
@@ -546,6 +588,14 @@ void mmc_do_release_host(struct mmc_host *host)
 		host->claimed = 0;
 		host->claimer = NULL;
 		spin_unlock_irqrestore(&host->lock, flags);
+#if defined(CONFIG_ARCH_GEN3) && defined(CONFIG_HW_MUTEXES)
+		/* 
+		* mmc_release_host is the end point of a set of MMC operations.
+		* Unlock the HW Mutex when a task doesn't own the controller 
+		*/
+		UNLOCK_EMMC_HW_MUTEX(host);
+        //printk("[PowerOn] mmc_do_release_host:  HWMUTEX OFF\n");
+#endif	
 		wake_up(&host->wq);
 	}
 }
@@ -556,9 +606,14 @@ void mmc_host_deeper_disable(struct work_struct *work)
 	struct mmc_host *host =
 		container_of(work, struct mmc_host, disable.work);
 
+   //printk("[PowerOn] mmc_host_deeper_disable\n");
+
 	/* If the host is claimed then we do not want to disable it anymore */
 	if (!mmc_try_claim_host(host))
 		return;
+
+   //printk("[PowerOn] mmc_host_deeper_disable - mmc_try_claim_host failed\n");
+
 	mmc_host_do_disable(host, 1);
 	mmc_do_release_host(host);
 }
@@ -985,6 +1040,9 @@ static void mmc_power_up(struct mmc_host *host)
 	host->ios.power_mode = MMC_POWER_UP;
 	host->ios.bus_width = MMC_BUS_WIDTH_1;
 	host->ios.timing = MMC_TIMING_LEGACY;
+#ifdef CONFIG_ARCH_GEN3
+	host->ios.ddr = MMC_SDR_MODE;
+#endif
 	mmc_set_ios(host);
 
 	/*
@@ -1023,6 +1081,9 @@ static void mmc_power_off(struct mmc_host *host)
 	host->ios.power_mode = MMC_POWER_OFF;
 	host->ios.bus_width = MMC_BUS_WIDTH_1;
 	host->ios.timing = MMC_TIMING_LEGACY;
+#ifdef CONFIG_ARCH_GEN3
+	host->ios.ddr = MMC_SDR_MODE;
+#endif
 	mmc_set_ios(host);
 }
 
@@ -1508,6 +1569,8 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 	pr_info("%s: %s: trying to init card at %u Hz\n",
 		mmc_hostname(host), __func__, host->f_init);
 #endif
+    //printk("[PowerOn] %s: %s: trying to init card at %u Hz\n",mmc_hostname(host), __func__, host->f_init);
+
 	mmc_power_up(host);
 
 	/*
@@ -1515,32 +1578,57 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 	 * if the card is being re-initialized, just send it.  CMD52
 	 * should be ignored by SD/eMMC cards.
 	 */
+    //printk("[PowerOn] mmc_rescan_try_freq - sdio_reset\n");
 	sdio_reset(host);
+
+    //printk("[PowerOn] mmc_rescan_try_freq - mmc_go_idle\n");
 	mmc_go_idle(host);
 
 	mmc_send_if_cond(host, host->ocr_avail);
 
 	/* Order's important: probe SDIO, then SD, then MMC */
+    //printk("[PowerOn] mmc_rescan_try_freq - Try to probe sdio\n");
 	if (!mmc_attach_sdio(host))
+    {
+        //printk("[PowerOn] mmc_rescan_try_freq - sdio detected\n");
 		return 0;
+    }
+    //printk("[PowerOn] mmc_rescan_try_freq - Try to probe sd\n");
 	if (!mmc_attach_sd(host))
+    {
+        //printk("[PowerOn] mmc_rescan_try_freq - sd detected\n");
 		return 0;
+    }
+    //printk("[PowerOn] mmc_rescan_try_freq - Try to probe mmc\n");
 	if (!mmc_attach_mmc(host))
+    {
+        //printk("[PowerOn]mmc_rescan_try_freq -  mmc detected\n");
 		return 0;
+    }
 
+    //printk("[PowerOn] mmc_rescan_try_freq - mmc_power_off\n");
 	mmc_power_off(host);
+
+    //printk("[PowerOn] mmc_rescan_try_freq - return -EIO;\n");
 	return -EIO;
 }
 
 void mmc_rescan(struct work_struct *work)
 {
 	static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
+
+
 	struct mmc_host *host =
 		container_of(work, struct mmc_host, detect.work);
 	int i;
 
-	if (host->rescan_disable)
+    //printk("[PowerOn] mmc_rescan - START\n");
+
+    if (host->rescan_disable)
+    {
+        //printk("[PowerOn] mmc_rescan: return 1\n");
 		return;
+    }
 
 	mmc_bus_get(host);
 
@@ -1562,6 +1650,7 @@ void mmc_rescan(struct work_struct *work)
 	/* if there still is a card present, stop here */
 	if (host->bus_ops != NULL) {
 		mmc_bus_put(host);
+        //printk("[PowerOn] mmc_rescan: go out 1\n");
 		goto out;
 	}
 
@@ -1572,20 +1661,54 @@ void mmc_rescan(struct work_struct *work)
 	mmc_bus_put(host);
 
 	if (host->ops->get_cd && host->ops->get_cd(host) == 0)
+    {
+        //printk("[PowerOn] mmc_rescan: go out 2\n");
 		goto out;
+    }
 
+    //printk("[PowerOn] mmc_rescan:mmc_claim_host()\n");
 	mmc_claim_host(host);
 	for (i = 0; i < ARRAY_SIZE(freqs); i++) {
+        //printk("[PowerOn] mmc_rescan: mmc_rescan_try_freq()\n");
 		if (!mmc_rescan_try_freq(host, max(freqs[i], host->f_min)))
 			break;
 		if (freqs[i] < host->f_min)
 			break;
 	}
+
+    //printk("[PowerOn] mmc_rescan:mmc_release_host()\n");
 	mmc_release_host(host);
 
- out:
+#if defined(CONFIG_ARCH_GEN3) && defined(CONFIG_HW_MUTEXES) 
+
+    /* eMMC advanced mode initializatin done, notify ATOM */
+    if (host->card != NULL)
+    {
+        if (mmc_card_present(host->card))
+        {
+            //printk("[PowerOn] mmc_rescan: remove MMC_CAP_NEEDS_POLL\n");
+            host->caps &= ~MMC_CAP_NEEDS_POLL;   /* Remvoe WA for Puma6 - After card is detected, we do not need to poll any nore */
+        }
+    }
+
+    if (!(host->caps & MMC_CAP_NEEDS_POLL))
+    {
+        printk(KERN_INFO"NP-CPU MBX Send notification to APP-CPU - 'Card initialization complete'...\n");
+        if (arm_atom_mbx_send_notification(ARM11_EVENT_EMMC_ADVANCE_INIT_EXIT,NULL)) 
+        {
+            printk(KERN_ERR"[%s] NP-CPU MBOX error  - Can not send advanced mode finish notification to APP-CPU.\n", __FUNCTION__);
+        }
+    }
+#endif
+
+out:
 	if (host->caps & MMC_CAP_NEEDS_POLL)
+    {
+        //printk("[PowerOn] mmc_rescan: mmc_schedule_delayed_work()...\n");
 		mmc_schedule_delayed_work(&host->detect, HZ);
+    }
+
+    // printk("[PowerOn] mmc_rescan:  DONE.\n");
 }
 
 void mmc_start_host(struct mmc_host *host)
@@ -1795,6 +1918,11 @@ int mmc_resume_host(struct mmc_host *host)
 }
 EXPORT_SYMBOL(mmc_resume_host);
 
+#ifdef CONFIG_ARCH_GEN3
+extern struct mutex mmc_ioctl_mutex;
+extern int mmc_in_suspend;
+#endif
+
 /* Do the card removal on suspend if card is assumed removeable
  * Do that in pm notifier while userspace isn't yet frozen, so we will be able
    to sync the card.
@@ -1806,11 +1934,17 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 		notify_block, struct mmc_host, pm_notify);
 	unsigned long flags;
 
+#ifdef CONFIG_ARCH_GEN3
+	mutex_lock(&mmc_ioctl_mutex);
+#endif
 
 	switch (mode) {
 	case PM_HIBERNATION_PREPARE:
 	case PM_SUSPEND_PREPARE:
 
+#ifdef CONFIG_ARCH_GEN3		
+		mmc_in_suspend = 1;
+#endif
 		spin_lock_irqsave(&host->lock, flags);
 		host->rescan_disable = 1;
 		spin_unlock_irqrestore(&host->lock, flags);
@@ -1833,12 +1967,19 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 	case PM_POST_HIBERNATION:
 	case PM_POST_RESTORE:
 
+#ifdef CONFIG_ARCH_GEN3		
+		mmc_in_suspend = 0;
+#endif
 		spin_lock_irqsave(&host->lock, flags);
 		host->rescan_disable = 0;
 		spin_unlock_irqrestore(&host->lock, flags);
 		mmc_detect_change(host, 0);
 
 	}
+
+#ifdef CONFIG_ARCH_GEN3
+	mutex_unlock(&mmc_ioctl_mutex);
+#endif
 
 	return 0;
 }

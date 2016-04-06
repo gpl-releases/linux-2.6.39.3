@@ -69,3 +69,8 @@ header-y += xt_tcpmss.h
 header-y += xt_tcpudp.h
 header-y += xt_time.h
 header-y += xt_u32.h
+# BEGIN CISCO EXTENSION
+header-y += xt_httphost.h
+header-y += xt_httpcookie.h
+header-y += xt_httpurl.h
+# END CISCO EXTENSION

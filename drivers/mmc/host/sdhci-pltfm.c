@@ -21,6 +21,10 @@
  *
  * Inspired by sdhci-pci.c, by Pierre Ossman
  */
+/* 
+ * Includes Intel Corporation's changes/modifications dated: 2012. 
+ * Changed/modified portions - Copyright � 2012 , Intel Corporation.   
+ */ 
 
 #include <linux/delay.h>
 #include <linux/highmem.h>
@@ -34,6 +38,11 @@
 
 #include "sdhci.h"
 #include "sdhci-pltfm.h"
+
+#ifdef CONFIG_ARCH_GEN3
+#include <asm-arm/arch-avalanche/puma6/hw_mutex_ctrl.h>
+#include <asm-arm/arch-avalanche/puma6/arm_atom_mbx.h>
+#endif
 
 /*****************************************************************************\
  *                                                                           *
@@ -76,12 +85,19 @@ static int __devinit sdhci_pltfm_probe(struct platform_device *pdev)
 
 	/* Some PCI-based MFD need the parent here */
 	if (pdev->dev.parent != &platform_bus)
+    {
+        //printk("[PowerOn] sdhci_pltfm_probe calling sdhci_alloc_host() (PCI-based MFD) \n");
 		host = sdhci_alloc_host(pdev->dev.parent, sizeof(*pltfm_host));
+    }
 	else
+    {
+        //printk("[PowerOn] sdhci_pltfm_probe calling sdhci_alloc_host() \n");
 		host = sdhci_alloc_host(&pdev->dev, sizeof(*pltfm_host));
+    }
 
 	if (IS_ERR(host)) {
-		ret = PTR_ERR(host);
+        ret = PTR_ERR(host);
+        //printk("[PowerOn] sdhci_alloc_host() return error \n");
 		goto err;
 	}
 
@@ -95,7 +111,10 @@ static int __devinit sdhci_pltfm_probe(struct platform_device *pdev)
 	if (pdata)
 		host->quirks = pdata->quirks;
 	host->irq = platform_get_irq(pdev, 0);
-
+/* 
+    in Puma6 we do not use ioremap, ioumap, request_mem_region and release_mem_region - virtual addresses are
+    predefined.
+ 
 	if (!request_mem_region(iomem->start, resource_size(iomem),
 		mmc_hostname(host->mmc))) {
 		dev_err(&pdev->dev, "cannot request region\n");
@@ -109,6 +128,23 @@ static int __devinit sdhci_pltfm_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto err_remap;
 	}
+*/
+
+    /* Get virtual address */
+    host->ioaddr = (unsigned int __iomem *)(iomem->start);
+	if (!host->ioaddr) {
+		dev_err(&pdev->dev, "failed to map registers\n");
+		ret = -ENOMEM;
+		goto err_remap;
+	}
+
+#ifdef CONFIG_ARCH_GEN3
+    // TEMP REMOVED    host->flags |= SDHCI_SUPPORT_DDR;       /* Support Dual Data Rate - eMMC 4.4 only*/
+    host->flags |= SDHCI_SUPPORT_HW_MUTEX;  /* Support HW Mutex       */
+#endif
+
+    /* OMER - Copy from sdhci-pci.c - not sure if necessary */
+    host->mmc->pm_caps = MMC_PM_KEEP_POWER | MMC_PM_WAKE_SDIO_IRQ;
 
 	if (pdata && pdata->init) {
 		ret = pdata->init(host, pdata);
@@ -116,21 +152,45 @@ static int __devinit sdhci_pltfm_probe(struct platform_device *pdev)
 			goto err_plat_init;
 	}
 
-	ret = sdhci_add_host(host);
+#ifdef CONFIG_ARCH_GEN3
+    printk(KERN_INFO"NP-CPU MBX waits for 'eMMC advance mode ready' notification from APP-CPU ...\n");
+    for (;;)
+    { 
+    if (arm_atom_mbx_receive_event_notification(ATOM_EVENT_EMMC_ADVANCE_EXIT,NULL) != 0)
+    {
+            printk(KERN_INFO"[%s] NP-CPU MBOX error  -  did not get event 'eMMC advance mode ready' notification from APP-CPU, retrying ... \n", __FUNCTION__);
+        }
+        else
+		{
+            printk(KERN_INFO"NP-CPU MBX received 'eMMC advance mode ready' notification from APP-CPU.\n");
+            break;
+		}
+    }
+    //printk("[PowerOn] sdhci_pltfm_probe: Taking HW-MUTEX...\n");
+	LOCK_EMMC_HW_MUTEX(host->mmc);
+    //printk("[PowerOn] sdhci_pltfm_probe: Got HW-MUTEX\n");
+#endif
+    ret = sdhci_add_host(host);
+#ifdef CONFIG_ARCH_GEN3
+
+    //printk("[PowerOn] sdhci_pltfm_probe: Release HW-MUTEX\n");
+    UNLOCK_EMMC_HW_MUTEX(host->mmc);
+#endif
 	if (ret)
-		goto err_add_host;
+    {
+        goto err_add_host;
+    }
 
 	platform_set_drvdata(pdev, host);
-
 	return 0;
 
 err_add_host:
 	if (pdata && pdata->exit)
 		pdata->exit(host);
 err_plat_init:
-	iounmap(host->ioaddr);
+	/* iounmap(host->ioaddr); */
 err_remap:
-	release_mem_region(iomem->start, resource_size(iomem));
+	/* release_mem_region(iomem->start, resource_size(iomem)); */
 err_request:
 	sdhci_free_host(host);
 err:
@@ -142,7 +202,7 @@ static int __devexit sdhci_pltfm_remove(struct platform_device *pdev)
 {
 	struct sdhci_pltfm_data *pdata = pdev->dev.platform_data;
 	struct sdhci_host *host = platform_get_drvdata(pdev);
-	struct resource *iomem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	/* struct resource *iomem = platform_get_resource(pdev, IORESOURCE_MEM, 0); */
 	int dead;
 	u32 scratch;
 
@@ -154,8 +214,8 @@ static int __devexit sdhci_pltfm_remove(struct platform_device *pdev)
 	sdhci_remove_host(host, dead);
 	if (pdata && pdata->exit)
 		pdata->exit(host);
-	iounmap(host->ioaddr);
-	release_mem_region(iomem->start, resource_size(iomem));
+	/* iounmap(host->ioaddr); */
+	/* release_mem_region(iomem->start, resource_size(iomem)); */
 	sdhci_free_host(host);
 	platform_set_drvdata(pdev, NULL);
 
@@ -175,6 +235,9 @@ static const struct platform_device_id sdhci_pltfm_ids[] = {
 #endif
 #ifdef CONFIG_MMC_SDHCI_TEGRA
 	{ "sdhci-tegra", (kernel_ulong_t)&sdhci_tegra_pdata },
+#endif
+#ifdef CONFIG_MMC_SDHCI_PUMA6
+	{ "sdhci-puma6", (kernel_ulong_t)&sdhci_puma6_pdata },
 #endif
 	{ },
 };

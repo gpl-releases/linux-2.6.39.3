@@ -64,11 +64,17 @@ struct irq_desc {
 #ifdef CONFIG_PROC_FS
 	struct proc_dir_entry	*dir;
 #endif
+#ifdef CONFIG_INTEL_IRQ_THREAD_CHANGE_PRIORITY
+    int policy;
+    unsigned int sched_priority; 
+#endif
+
 	const char		*name;
 } ____cacheline_internodealigned_in_smp;
 
 #ifndef CONFIG_SPARSE_IRQ
 extern struct irq_desc irq_desc[NR_IRQS];
+typedef struct irq_desc irq_desc_t;
 #endif
 
 #ifdef CONFIG_GENERIC_HARDIRQS

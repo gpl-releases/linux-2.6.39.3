@@ -32,6 +32,9 @@
 #include "vlanproc.h"
 #include <linux/if_vlan.h>
 
+
+#include <mach/puma.h>
+
 /*
  *	Rebuild the Ethernet MAC header. This is called after an ARP
  *	(or in future other address resolution) has completed on this
@@ -241,8 +244,10 @@ err_free:
 static inline u16
 vlan_dev_get_egress_qos_mask(struct net_device *dev, struct sk_buff *skb)
 {
-	struct vlan_priority_tci_mapping *mp;
-
+#if (CONFIG_MACH_PUMA6)
+    return (VLAN_PRIO_MASK & (((u16)(skb->ti_meta_info)) << VLAN_PRIO_SHIFT));
+#else
+    struct vlan_priority_tci_mapping *mp;
 	mp = vlan_dev_info(dev)->egress_priority_map[(skb->priority & 0xF)];
 	while (mp) {
 		if (mp->priority == skb->priority) {
@@ -253,6 +258,7 @@ vlan_dev_get_egress_qos_mask(struct net_device *dev, struct sk_buff *skb)
 		mp = mp->next;
 	}
 	return 0;
+#endif
 }
 
 /*

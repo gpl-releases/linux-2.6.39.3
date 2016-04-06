@@ -5,6 +5,12 @@
  * kernel/irq/. Do not even think about using any information outside
  * of this file for your non core code.
  */
+ 
+/* 
+ * Includes Intel Corporation's changes/modifications dated: 2012. 
+ * Changed/modified portions - Copyright © 2012 , Intel Corporation.   
+ */
+ 
 #include <linux/irqdesc.h>
 
 #ifdef CONFIG_SPARSE_IRQ
@@ -73,6 +79,9 @@ extern void irq_enable(struct irq_desc *desc);
 extern void irq_disable(struct irq_desc *desc);
 extern void mask_irq(struct irq_desc *desc);
 extern void unmask_irq(struct irq_desc *desc);
+#ifdef CONFIG_MACH_PUMA6
+extern void irq_ack(struct irq_desc *desc);
+#endif
 
 extern void init_kstat_irqs(struct irq_desc *desc, int node, int nr);
 

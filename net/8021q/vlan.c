@@ -35,6 +35,7 @@
 #include <asm/uaccess.h>
 
 #include <linux/if_vlan.h>
+#include <linux/ti_hil.h>
 #include "vlan.h"
 #include "vlanproc.h"
 
@@ -114,7 +115,13 @@ void unregister_vlan_dev(struct net_device *dev, struct list_head *head)
 
 	grp = rtnl_dereference(real_dev->vlgrp);
 	BUG_ON(!grp);
-
+#ifdef CONFIG_TI_PACKET_PROCESSOR	
+    /* Send an event to HIL PP indicating that the VLAN
+     * device is being brought down. The HIL PP could 
+     * clean up any if existing references to this VLAN 
+     * device in its domain. */
+    ti_hil_pp_event(TI_VLAN_DEV_DELETED, (void *)dev);
+#endif //CONFIG_TI_PACKET_PROCESSOR
 	/* Take it out of our own structures, but be sure to interlock with
 	 * HW accelerating devices or SW vlan input packet processing if
 	 * VLAN is not 0 (leave it there for 802.1p).
@@ -295,7 +302,16 @@ static int register_vlan_device(struct net_device *real_dev, u16 vlan_id)
 	err = register_vlan_dev(new_dev);
 	if (err < 0)
 		goto out_free_newdev;
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* Inheritance at work here. We copy the VPID Information block from the parent device
+     * to the new VLAN virtual device. */
+    ti_hil_clone_netdev_pp_info(new_dev, real_dev);
 
+    /* Send an event to HIL PP indicating that a new VLAN device
+     * is being created. The HIL may store the VLAN info and use it 
+     * later for PP session creation and acceleration decision making */
+    ti_hil_pp_event(TI_VLAN_DEV_CREATED, (void *)new_dev);
+#endif
 	return 0;
 
 out_free_newdev:

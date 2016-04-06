@@ -77,6 +77,15 @@ struct in_addr {
 #define IP_PASSSEC	18
 #define IP_TRANSPARENT	19
 
+/* 
+* TI Extension:
+*   socket option for ability to recieve the relevent for 
+*   cable TI modem information through the IPv4 socket.
+*/
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+#define TI_IP_PKTINFO	23
+#endif
+
 /* BSD compatibility */
 #define IP_RECVRETOPTS	IP_RETOPTS
 
@@ -87,6 +96,10 @@ struct in_addr {
 #define IP_MINTTL       21
 #define IP_NODEFRAG     22
 
+/* TI Extension to pass meta data through sockets. */
+#ifdef CONFIG_TI_META_DATA
+#define TI_IP_META_DATA 18
+#endif /* CONFIG_TI_META_DATA */
 /* IP_MTU_DISCOVER values */
 #define IP_PMTUDISC_DONT		0	/* Never send DF frames */
 #define IP_PMTUDISC_WANT		1	/* Use per route hints	*/
@@ -178,6 +191,21 @@ struct in_pktinfo {
 	struct in_addr	ipi_spec_dst;
 	struct in_addr	ipi_addr;
 };
+/*
+*  TI Extension:
+*   data structure for passing the needed information
+*   about the incoming packet. Currently we only need a small element
+*/
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+#ifndef TI_PKTINFO_STRUCT
+#define TI_PKTINFO_STRUCT
+struct ti_pktinfo
+{
+	int		ifcpe_side;
+    char    mac_addr[6];
+};
+#endif
+#endif
 
 /* Structure describing an Internet (IP) socket address. */
 #define __SOCK_SIZE__	16		/* sizeof(struct sockaddr)	*/

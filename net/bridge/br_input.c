@@ -21,6 +21,10 @@
 /* Bridge group multicast address 802.1d (pg 51). */
 const u8 br_group_address[ETH_ALEN] = { 0x01, 0x80, 0xc2, 0x00, 0x00, 0x00 };
 
+#ifdef CONFIG_TI_L2_SELECTIVE_FORWARDER
+extern int ti_selective_packet_handler (struct sk_buff *skb);
+#endif /* CONFIG_TI_L2_SELECTIVE_FORWARDER */
+
 /* Hook for brouter */
 br_should_route_hook_t __rcu *br_should_route_hook __read_mostly;
 EXPORT_SYMBOL(br_should_route_hook);
@@ -78,6 +82,12 @@ int br_handle_frame_finish(struct sk_buff *skb)
 	dst = NULL;
 
 	if (is_multicast_ether_addr(dest)) {
+#ifdef CONFIG_TI_L2_SELECTIVE_FORWARDER
+        /* If return value is zero indicates fall back to default behavior */
+        if (ti_selective_packet_handler(skb) != 0) {			
+            goto out;
+		}
+#endif /* CONFIG_TI_L2_SELECTIVE_FORWARDER */
 		mdst = br_mdb_get(br, skb);
 		if (mdst || BR_INPUT_SKB_CB_MROUTERS_ONLY(skb)) {
 			if ((mdst && mdst->mglist) ||
@@ -100,8 +110,14 @@ int br_handle_frame_finish(struct sk_buff *skb)
 	if (skb) {
 		if (dst)
 			br_forward(dst->dst, skb, skb2);
-		else
+		else {
+#ifdef CONFIG_TI_L2_SELECTIVE_FORWARDER
+				/* If return value is zero indicates fall back to default behavior */
+				if (ti_selective_packet_handler(skb) != 0)
+					 goto out;
+#endif /* CONFIG_TI_L2_SELECTIVE_FORWARDER */
 			br_flood_forward(br, skb, skb2);
+		}
 	}
 
 	if (skb2)
@@ -155,6 +171,14 @@ rx_handler_result_t br_handle_frame(struct sk_buff **pskb)
 	skb = skb_share_check(skb, GFP_ATOMIC);
 	if (!skb)
 		return RX_HANDLER_CONSUMED;
+
+   /*this cond was added for skb->ti_selective_forward will receive later on the correct vlan device*/
+   #ifdef CONFIG_TI_DOCSIS_INPUT_DEV
+   if(!skb->ti_docsis_input_dev)
+   {
+       skb->ti_docsis_input_dev = skb->dev;
+   }
+   #endif
 
 	p = br_port_get_rcu(skb->dev);
 

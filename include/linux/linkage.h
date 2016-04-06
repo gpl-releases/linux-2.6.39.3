@@ -4,6 +4,11 @@
 #include <linux/compiler.h>
 #include <asm/linkage.h>
 
+
+/*
+#define notrace __attribute ((no_instrument_function))
+*/
+
 #ifdef __cplusplus
 #define CPP_ASMLINKAGE extern "C"
 #else
@@ -13,6 +18,11 @@
 #ifndef asmlinkage
 #define asmlinkage CPP_ASMLINKAGE
 #endif
+
+#ifndef prevent_tail_call
+# define prevent_tail_call(ret) do { } while (0)
+#endif
+
 
 #ifndef asmregparm
 # define asmregparm
@@ -95,5 +105,10 @@
 #define NORET_TYPE    /**/
 #define ATTRIB_NORET  __attribute__((noreturn))
 #define NORET_AND     noreturn,
+
+#ifndef FASTCALL
+#define FASTCALL(x)	x
+#define fastcall
+#endif
 
 #endif

@@ -221,7 +221,9 @@ static struct net_device *new_bridge_dev(struct net *net, const char *name)
 
 	br_stp_timer_init(br);
 	br_multicast_init(br);
-
+#ifdef CONFIG_TI_L2_SELECTIVE_PACKET_HANDLING
+    br->selective_packet_handler = NULL;
+#endif /* CONFIG_TI_L2_SELECTIVE_PACKET_HANDLING */
 	return dev;
 }
 
