@@ -834,6 +834,27 @@ config NETFILTER_XT_MATCH_IPVS
 
 	  If unsure, say N.
 
+config CISCO_NETFILTER_XT_MATCH_HTTPHOST
+	tristate '"httphost" HTTP Host header match support'
+	depends on NETFILTER_XTABLES
+	help
+	  The xt_httphost module allows you to match the Host header
+	  of HTTP requests.
+
+config CISCO_NETFILTER_XT_MATCH_HTTPCOOKIE
+	tristate '"httpcookie" HTTP cookie blocking support'
+	depends on NETFILTER_XTABLES
+	help
+	  The xt_httpcookie module allows you to block the contents of the Cookie
+	  header from HTTP requests.
+
+config CISCO_NETFILTER_XT_MATCH_HTTPURL
+	tristate '"httpurl" HTTP URL match support'
+	depends on NETFILTER_XTABLES
+	help
+	  The xt_httpurl module allows you to match proxied, Java, or ActiveX
+	  HTTP requests.
+
 config NETFILTER_XT_MATCH_LENGTH
 	tristate '"length" match support'
 	depends on NETFILTER_ADVANCED

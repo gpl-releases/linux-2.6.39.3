@@ -15,6 +15,17 @@
 
 #include <linux/serial_8250.h>
 
+
+#if 1/* (SA_CUSTOM)*/
+#ifndef ConsoleSecurity
+#define ConsoleSecurity
+#endif
+
+#ifdef ConsoleSecurity
+extern int irwChoice;
+#endif
+#endif 
+
 struct old_serial_port {
 	unsigned int uart;
 	unsigned int baud_base;

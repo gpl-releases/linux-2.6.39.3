@@ -64,6 +64,8 @@ obj-$(CONFIG_IEEE802154)	+= ieee802154/
 ifeq ($(CONFIG_NET),y)
 obj-$(CONFIG_SYSCTL)		+= sysctl_net.o
 endif
+# Always Build the TI Extensions
+obj-y                   += ti/
 obj-$(CONFIG_WIMAX)		+= wimax/
 obj-$(CONFIG_DNS_RESOLVER)	+= dns_resolver/
 obj-$(CONFIG_CEPH_LIB)		+= ceph/

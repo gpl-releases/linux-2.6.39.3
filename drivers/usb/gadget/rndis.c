@@ -21,6 +21,28 @@
  *		updates to merge with Linux 2.6, better match RNDIS spec
  */
 
+/* Copyright 2008, Texas Instruments Incorporated
+ *
+ * This program has been modified from its original operation by 
+ * Texas Instruments to do the following:
+ * 
+ * Explanation of modification:
+ *  fixes/changes from Puma5
+ *  
+ *
+ * THIS MODIFIED SOFTWARE AND DOCUMENTATION ARE PROVIDED
+ * "AS IS," AND TEXAS INSTRUMENTS MAKES NO REPRESENTATIONS
+ * OR WARRENTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+ * TO, WARRANTIES OF MERCHANTABILITY OR FITNESS FOR ANY
+ * PARTICULAR PURPOSE OR THAT THE USE OF THE SOFTWARE OR
+ * DOCUMENTATION WILL NOT INFRINGE ANY THIRD PARTY PATENTS,
+ * COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS.
+ * See The GNU General Public License for more details.
+ *
+ * These changes are covered under version 2 of the GNU General Public License,
+ * dated June 1991.
+ */
+ 
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
@@ -89,6 +111,9 @@ static const u32 oid_supported_list[] =
 	OID_GEN_MAXIMUM_TOTAL_SIZE,
 	OID_GEN_MEDIA_CONNECT_STATUS,
 	OID_GEN_PHYSICAL_MEDIUM,
+#ifdef CONFIG_MACH_PUMA5
+	OID_GEN_RNDIS_CONFIG_PARAMETER,
+#endif
 
 	/* the statistical stuff */
 	OID_GEN_XMIT_OK,
@@ -159,6 +184,11 @@ static const u32 oid_supported_list[] =
 #endif	/* RNDIS_PM */
 };
 
+#ifdef CONFIG_MACH_PUMA5
+static void string_to_unicode (char *string, u16 *unicode_string, u16 *length);
+static u8 unicode_to_macnibble (u16 value);
+static int rndis_indicate_status_msg (int configNr, u32 status);
+#endif
 
 /* NDIS Functions */
 static int gen_ndis_query_resp(int configNr, u32 OID, u8 *buf,
@@ -314,7 +344,11 @@ static int gen_ndis_query_resp(int configNr, u32 OID, u8 *buf,
 	/* mandatory */
 	case OID_GEN_CURRENT_PACKET_FILTER:
 		pr_debug("%s: OID_GEN_CURRENT_PACKET_FILTER\n", __func__);
+#ifdef CONFIG_MACH_PUMA5
+		*outbuf = cpu_to_le32 (*(u16 *)rndis_per_dev_params[configNr].filter);
+#else
 		*outbuf = cpu_to_le32(*rndis_per_dev_params[configNr].filter);
+#endif
 		retval = 0;
 		break;
 
@@ -336,7 +370,11 @@ static int gen_ndis_query_resp(int configNr, u32 OID, u8 *buf,
 
 	case OID_GEN_PHYSICAL_MEDIUM:
 		pr_debug("%s: OID_GEN_PHYSICAL_MEDIUM\n", __func__);
+#ifdef CONFIG_MACH_PUMA5
+		*outbuf = __constant_cpu_to_le32 (2); //5
+#else		
 		*outbuf = cpu_to_le32(0);
+#endif
 		retval = 0;
 		break;
 
@@ -412,9 +450,15 @@ static int gen_ndis_query_resp(int configNr, u32 OID, u8 *buf,
 		pr_debug("%s: OID_802_3_PERMANENT_ADDRESS\n", __func__);
 		if (rndis_per_dev_params[configNr].dev) {
 			length = ETH_ALEN;
+#ifdef CONFIG_MACH_PUMA5
+			 memcpy (outbuf,
+                                rndis_per_dev_params [configNr].perm_mac,
+                                length);
+#else
 			memcpy(outbuf,
 				rndis_per_dev_params[configNr].host_mac,
 				length);
+#endif
 			retval = 0;
 		}
 		break;
@@ -443,7 +487,11 @@ static int gen_ndis_query_resp(int configNr, u32 OID, u8 *buf,
 	case OID_802_3_MAXIMUM_LIST_SIZE:
 		pr_debug("%s: OID_802_3_MAXIMUM_LIST_SIZE\n", __func__);
 		/* Multicast base address only */
+#ifdef CONFIG_MACH_PUMA5
+		*outbuf = __constant_cpu_to_le32 (32); /* TAG0008 */
+#else
 		*outbuf = cpu_to_le32(1);
+#endif
 		retval = 0;
 		break;
 
@@ -549,9 +597,58 @@ static int gen_ndis_set_resp(u8 configNr, u32 OID, u8 *buf, u32 buf_len,
 	case OID_802_3_MULTICAST_LIST:
 		/* I think we can ignore this */
 		pr_debug("%s: OID_802_3_MULTICAST_LIST\n", __func__);
-		retval = 0;
-		break;
+#ifdef CONFIG_MACH_PUMA5
+		/* TAG0010*/
+		memset (rndis_per_dev_params [configNr].mcast_addr, 0,
+                        RNDIS_MAX_MULTICAST_SIZE * 6);
+                memcpy (rndis_per_dev_params [configNr].mcast_addr,
+                        buf, buf_len);
 
+		retval = 0; 
+
+#else
+		retval = 0;
+#endif
+		break;
+#ifdef CONFIG_MACH_PUMA5
+	case OID_GEN_RNDIS_CONFIG_PARAMETER:
+		{
+                struct rndis_config_parameter   *param;
+                char   *strbuf;
+                u16    param_name [80], parlen, index = 0;
+                u8      first, second;
+
+
+		param = (struct rndis_config_parameter *) buf;
+                strbuf = buf + cpu_to_le32(param->ParameterNameOffset);
+
+		string_to_unicode ("NetworkAddress", param_name, &parlen);
+                if ((parlen == cpu_to_le32(param->ParameterNameLength)) &&
+                        ((memcmp (param_name, strbuf, parlen) == 0)))
+                {
+                        parlen = cpu_to_le32(param->ParameterValueLength);
+                        strbuf = buf + cpu_to_le32(param->ParameterValueOffset);
+                        while (parlen)
+                        {
+                                first = unicode_to_macnibble (cpu_to_le16p((u16*)strbuf));
+                                strbuf += 2;
+                                second = unicode_to_macnibble (cpu_to_le16p((u16*)strbuf));
+                                strbuf += 2;
+                        if ((first != 0xff) && (second != 0xff))
+                        {
+                                rndis_per_dev_params[configNr].host_mac [index] = (first << 4) | second;
+                                parlen -= 4;
+                                index ++;
+                        } else {
+                                break;
+                        }
+                        }
+                        retval = 0;
+                }
+                }
+
+		break;
+#endif
 	default:
 		pr_warning("%s: set unknown OID 0x%08X, size %d\n",
 			 __func__, OID, buf_len);
@@ -764,10 +861,29 @@ int rndis_signal_connect(int configNr)
 					  RNDIS_STATUS_MEDIA_CONNECT);
 }
 
+#ifdef CONFIG_MACH_PUMA5
+int rndis_signal_disconnect (int configNr, u8 logical)
+#else
 int rndis_signal_disconnect(int configNr)
+#endif
 {
+#ifdef CONFIG_MACH_PUMA5
+        u8      *buf;
+        u32     temp;
+#endif	
 	rndis_per_dev_params[configNr].media_state
 			= NDIS_MEDIA_STATE_DISCONNECTED;
+#ifdef CONFIG_MACH_PUMA5
+        if (!logical)
+        {
+
+                rndis_per_dev_params [configNr].state = RNDIS_UNINITIALIZED;
+                while ((buf = rndis_get_next_response (configNr, &temp)))
+                        rndis_free_response (configNr, buf);
+                return 0;
+        } else
+#endif
+
 	return rndis_indicate_status_msg(configNr,
 					  RNDIS_STATUS_MEDIA_DISCONNECT);
 }
@@ -789,6 +905,9 @@ void rndis_uninit(int configNr)
 void rndis_set_host_mac(int configNr, const u8 *addr)
 {
 	rndis_per_dev_params[configNr].host_mac = addr;
+#ifdef CONFIG_MACH_PUMA5
+	memcpy ((void *)rndis_per_dev_params[configNr].perm_mac, addr, 6);
+#endif	
 }
 
 /*
@@ -830,6 +949,11 @@ int rndis_msg_parser(u8 configNr, u8 *buf)
 			__func__);
 		params->state = RNDIS_UNINITIALIZED;
 		if (params->dev) {
+#ifdef CONFIG_MACH_PUMA5
+			 memcpy (
+                (void *)rndis_per_dev_params[configNr].host_mac,
+                (void *)rndis_per_dev_params[configNr].perm_mac, 6); 
+#endif		
 			netif_carrier_off(params->dev);
 			netif_stop_queue(params->dev);
 		}
@@ -955,6 +1079,12 @@ int rndis_set_param_medium(u8 configNr, u32 medium, u32 speed)
 
 	return 0;
 }
+#ifdef CONFIG_MACH_PUMA5
+u32  rndis_get_param_filter (u8 configNr)
+{
+        return (u32)(*rndis_per_dev_params [configNr].filter);
+}
+#endif
 
 void rndis_add_hdr(struct sk_buff *skb)
 {
@@ -1113,7 +1243,11 @@ static ssize_t rndis_proc_write(struct file *file, const char __user *buffer,
 			break;
 		case 'D':
 		case 'd':
+#ifdef CONFIG_MACH_PUMA5
+			rndis_signal_disconnect(p->confignr,0);
+#else			
 			rndis_signal_disconnect(p->confignr);
+#endif
 			break;
 		default:
 			if (fl_speed) p->speed = speed;
@@ -1193,3 +1327,74 @@ void rndis_exit(void)
 	}
 #endif
 }
+
+#ifdef CONFIG_MACH_PUMA5
+char  rndis_get_multicast_status (int cfg, const u8 *addr)
+{
+        u32     index = 0;
+        char    status = 0;
+
+        while (index < RNDIS_MAX_MULTICAST_SIZE)
+        {
+                if ((rndis_per_dev_params[cfg].mcast_addr[index][0] == addr[0]) &&
+                (rndis_per_dev_params[cfg].mcast_addr[index][1] == addr[1]) &&
+                (rndis_per_dev_params[cfg].mcast_addr[index][2] == addr[2]) &&
+                (rndis_per_dev_params[cfg].mcast_addr[index][3] == addr[3]) &&
+                (rndis_per_dev_params[cfg].mcast_addr[index][4] == addr[4]) &&
+                (rndis_per_dev_params[cfg].mcast_addr[index][5] == addr[5]))
+                {
+                        status = 1;
+                        break;
+                }
+                index++;
+        }
+
+        return status;
+}
+/* TAG0009 */
+static void string_to_unicode (char *string, u16 *unicode_string, u16 *length)
+{
+        u32     index;
+
+        /* The UNICODE string will be twice the length of the ANSI string. */
+        *length = 2 * strlen (string);
+
+        /* Convert the ANSI String to UNICODE format. */
+        for (index = 0; index < strlen (string); index++)
+                unicode_string[index] = cpu_to_le16((u16)(string[index]));
+
+}
+
+static u8 unicode_to_macnibble (u16 value)
+{
+        u8 retval  = 0xff;
+
+        if ( (value >= '0') && (value <= '9') )
+        {
+                retval = value - '0';
+        } else {
+                if ( (value >= 'A') && (value <= 'F') )
+                {
+                        retval = value - '7';
+                } else {
+                        if ( (value >= 'a') && (value <= 'f') )
+                        {
+                                retval = value - 'W';
+                        }
+                }
+        }
+
+        return retval;
+}
+int is_rndis_configured(int configNr)
+{
+
+        if (rndis_per_dev_params [configNr].state == RNDIS_UNINITIALIZED)
+                return 0;
+        else
+	if (rndis_per_dev_params [configNr].state == RNDIS_INITIALIZED)
+                return 1;
+	else
+		return -1;
+}
+#endif

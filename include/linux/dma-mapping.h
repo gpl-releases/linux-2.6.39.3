@@ -245,4 +245,6 @@ struct dma_attrs;
 #define dma_unmap_len_set(PTR, LEN_NAME, VAL)    do { } while (0)
 #endif
 
+
+extern void consistent_sync(void *vaddr, size_t size, int direction);
 #endif

@@ -345,6 +345,12 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 
 	inet->tos = ip_hdr(skb)->tos;
 	daddr = ipc.addr = rt->rt_src;
+
+#ifdef CONFIG_TI_META_DATA
+    /* Initialize the meta-information. */
+    ipc.ti_meta_info = 0;
+#endif
+
 	ipc.opt = NULL;
 	ipc.tx_flags = 0;
 	if (icmp_param->replyopts.optlen) {
@@ -359,6 +365,11 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 			.flowi4_tos = RT_TOS(ip_hdr(skb)->tos),
 			.flowi4_proto = IPPROTO_ICMP,
 		};
+#ifdef CONFIG_INTEL_DOCSIS_ICMP_IIF
+			if(skb->docsis_icmp_iif)
+				fl4.flowi4_oif = skb->docsis_icmp_iif,
+#endif /* CONFIG_INTEL_DOCSIS_ICMP_IIF */
+  
 		security_skb_classify_flow(skb, flowi4_to_flowi(&fl4));
 		rt = ip_route_output_key(net, &fl4);
 		if (IS_ERR(rt))

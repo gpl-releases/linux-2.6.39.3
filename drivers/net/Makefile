@@ -10,6 +10,9 @@ obj-$(CONFIG_TI_DAVINCI_EMAC) += davinci_emac.o
 obj-$(CONFIG_TI_DAVINCI_MDIO) += davinci_mdio.o
 obj-$(CONFIG_TI_DAVINCI_CPDMA) += davinci_cpdma.o
 
+ifeq ($(DOCSIS_SOC), PUMA6)
+obj-$(CONFIG_CAT_L2SWITCH_NID) += cat_l2switch_netdev/
+endif
 obj-$(CONFIG_E1000) += e1000/
 obj-$(CONFIG_E1000E) += e1000e/
 obj-$(CONFIG_IBM_NEW_EMAC) += ibm_newemac/
@@ -292,6 +295,8 @@ obj-$(CONFIG_ENP2611_MSF_NET) += ixp2000/
 obj-$(CONFIG_NETCONSOLE) += netconsole.o
 
 obj-$(CONFIG_FS_ENET) += fs_enet/
+obj-$(CONFIG_ARM_AVALANCHE_CPGMAC_F) += avalanche_cpgmac_f/
+obj-$(CONFIG_ARM_AVALANCHE_PPD) += avalanche_ppd/
 
 obj-$(CONFIG_NETXEN_NIC) += netxen/
 obj-$(CONFIG_NIU) += niu.o

@@ -12,12 +12,14 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 
+
 /* Please don't access any members of this structure directly */
 struct semaphore {
 	spinlock_t		lock;
 	unsigned int		count;
 	struct list_head	wait_list;
 };
+
 
 #define __SEMAPHORE_INITIALIZER(name, n)				\
 {									\
@@ -42,5 +44,7 @@ extern int __must_check down_killable(struct semaphore *sem);
 extern int __must_check down_trylock(struct semaphore *sem);
 extern int __must_check down_timeout(struct semaphore *sem, long jiffies);
 extern void up(struct semaphore *sem);
+
+
 
 #endif /* __LINUX_SEMAPHORE_H */

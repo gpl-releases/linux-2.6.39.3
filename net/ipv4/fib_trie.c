@@ -79,6 +79,8 @@
 #include <net/tcp.h>
 #include <net/sock.h>
 #include <net/ip_fib.h>
+#include <linux/ti_hil.h>
+
 #include "fib_lookup.h"
 
 #define MAX_STAT_DEPTH 32
@@ -1323,6 +1325,13 @@ int fib_table_insert(struct fib_table *tb, struct fib_config *cfg)
 			  (fa ? &fa->fa_list : fa_head));
 
 	rt_cache_flush(cfg->fc_nlinfo.nl_net, -1);
+#ifdef CONFIG_TI_PACKET_PROCESSOR   
+    /* Send an event to HIL in PP indicating that a new route is being added. 
+     * The HIL will take the appropriate action, i.e. either selectively flush 
+     * the sessions that are affected by this route addition or just flush all
+     *  sessions to be coherent with the updated routing table. */
+    ti_hil_pp_event(TI_ROUTE_ADDED, (void *)new_fa);
+#endif //CONFIG_TI_PACKET_PROCESSOR
 	rtmsg_fib(RTM_NEWROUTE, htonl(key), new_fa, plen, tb->tb_id,
 		  &cfg->fc_nlinfo, 0);
 succeeded:
@@ -1676,6 +1685,14 @@ int fib_table_delete(struct fib_table *tb, struct fib_config *cfg)
 		return -ESRCH;
 
 	fa = fa_to_delete;
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* Send an event to the HIL Packet Processor indicating
+     * that this route is being deleted. The HIL will take
+     * the appropriate action - selectively flush its sessions
+     * which could be affected by this route / flush all sessions */
+    ti_hil_pp_event(TI_ROUTE_DELETED, (void *)fa);
+#endif // CONFIG_TI_PACKET_PROCESSOR		
+		
 	rtmsg_fib(RTM_DELROUTE, htonl(key), fa, plen, tb->tb_id,
 		  &cfg->fc_nlinfo, 0);
 

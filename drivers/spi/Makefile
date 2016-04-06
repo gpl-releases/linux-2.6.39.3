@@ -59,6 +59,17 @@ obj-$(CONFIG_SPI_NUC900)		+= spi_nuc900.o
 spi_s3c24xx_hw-y			:= spi_s3c24xx.o
 spi_s3c24xx_hw-$(CONFIG_SPI_S3C24XX_FIQ) += spi_s3c24xx_fiq.o
 
+
+obj-$(CONFIG_ARM_AVALANCHE_SPI)		+= avalanche_spi_bitbang.o
+ifeq ($(CONFIG_MACH_PUMA5),y)
+obj-$(CONFIG_ARM_AVALANCHE_SPI)		+= avalanche_spi_master.o
+endif
+ifeq ($(CONFIG_MACH_PUMA6),y)
+obj-$(CONFIG_ARM_AVALANCHE_SPI)		+= avalanche_spi_master_puma6.o
+endif
+obj-$(CONFIG_SPI_TI_CODEC)		+= spi_ticodec.o
+
+
 # 	... add above this line ...
 
 # SPI protocol drivers (device/link on bus)

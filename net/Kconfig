@@ -173,7 +173,7 @@ config BRIDGE_NETFILTER
 	bool "Bridged IP/ARP packets filtering"
 	depends on BRIDGE && NETFILTER && INET
 	depends on NETFILTER_ADVANCED
-	default y
+	default n
 	---help---
 	  Enabling this option will let arptables resp. iptables see bridged
 	  ARP resp. IP traffic. If you want a bridging firewall, you probably
@@ -289,6 +289,10 @@ source "net/rxrpc/Kconfig"
 
 config FIB_RULES
 	bool
+
+# TI Specific Networking Extensions
+source "net/ti.Kconfig"
+
 
 menuconfig WIRELESS
 	bool "Wireless"

@@ -27,6 +27,21 @@
 
 #include <net/netfilter/nf_conntrack_tuple.h>
 
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+
+/* Flag definitions that are carried in the PP status flag in the connection tracking
+ * structure. */
+
+/* Set the flag to indicate that the connection tacking timeout code should execute as
+ * such and the entry will be deleted. */
+#define TI_PP_KILL_CONNTRACK       0x1
+
+/* Set the flag to 1 indicates that all packets flowing through the box matching the 
+ * connection will have their BYPASS flag set. */
+#define TI_PP_BYPASS               0x2
+
+#endif /*CONFIG_TI_PACKET_PROCESSOR */
+
 /* per conntrack: protocol private data */
 union nf_conntrack_proto {
 	/* insert conntrack proto private data here */
@@ -133,6 +148,10 @@ struct nf_conn {
 	struct nf_ct_ext *ext;
 #ifdef CONFIG_NET_NS
 	struct net *ct_net;
+#endif
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    int             ti_pp_status_flag;
 #endif
 
 	/* Storage reserved for other modules, must be the last member */

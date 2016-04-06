@@ -6,6 +6,12 @@
  *
  * This file contains driver APIs to the irq subsystem.
  */
+ 
+/* 
+ * Includes Intel Corporation's changes/modifications dated: 2012. 
+ * Changed/modified portions - Copyright © 2012 , Intel Corporation.   
+ */
+
 
 #include <linux/irq.h>
 #include <linux/kthread.h>
@@ -462,6 +468,29 @@ out:
 }
 EXPORT_SYMBOL(enable_irq);
 
+#ifdef CONFIG_MACH_PUMA6
+/**
+ *	ack_irq - ACK handling of an irq
+ *	@irq: Interrupt to ACK
+ *
+ *	ACKs the selected interrupt line.
+ *
+ */
+void ack_irq(unsigned int irq)
+{
+    struct irq_desc *desc = irq_to_desc(irq);
+
+    if (!desc)
+    {
+		return;
+    }
+
+    irq_ack(desc);
+}
+EXPORT_SYMBOL(ack_irq);
+#endif
+
+
 static int set_irq_wake_real(unsigned int irq, unsigned int on)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
@@ -748,9 +777,13 @@ static void irq_thread_fn(struct irq_desc *desc, struct irqaction *action)
  */
 static int irq_thread(void *data)
 {
+#ifndef CONFIG_INTEL_IRQ_THREAD_CHANGE_PRIORITY
 	static const struct sched_param param = {
 		.sched_priority = MAX_USER_RT_PRIO/2,
 	};
+#else
+	struct sched_param param = { 0, };
+#endif
 	struct irqaction *action = data;
 	struct irq_desc *desc = irq_to_desc(action->irq);
 	void (*handler_fn)(struct irq_desc *desc, struct irqaction *action);
@@ -761,8 +794,19 @@ static int irq_thread(void *data)
 		handler_fn = irq_forced_thread_fn;
 	else
 		handler_fn = irq_thread_fn;
-
+#ifndef CONFIG_INTEL_IRQ_THREAD_CHANGE_PRIORITY
 	sched_setscheduler(current, SCHED_FIFO, &param);
+#else
+    if (desc->policy == SCHED_NORMAL)
+    {
+        set_user_nice(current, desc->sched_priority);
+    }
+    else
+    {
+        param.sched_priority = desc->sched_priority;
+        sched_setscheduler(current, desc->policy, &param);
+    }
+#endif
 	current->irqaction = action;
 
 	while (!irq_wait_for_interrupt(action)) {

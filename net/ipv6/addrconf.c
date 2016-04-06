@@ -2388,6 +2388,16 @@ static void addrconf_dev_config(struct net_device *dev)
 	if (IS_ERR(idev))
 		return;
 
+#ifdef CONFIG_INTEL_DEFAULT_IPV6_AUTOCONF_DISABLES_IPV6_AUTOCONF
+   /* NETDK: Check if autoconfiguration is enabled for the network device or
+     * not? */
+    if (idev->cnf.autoconf == 0)
+    {
+        printk ("Autoconfiguration disabled for %s\n", dev->name);
+        return;
+    }
+#endif
+
 	memset(&addr, 0, sizeof(struct in6_addr));
 	addr.s6_addr32[0] = htonl(0xFE800000);
 
@@ -2692,7 +2702,11 @@ static int addrconf_ifdown(struct net_device *dev, int how)
 		spin_lock_bh(&addrconf_hash_lock);
 	restart:
 		hlist_for_each_entry_rcu(ifa, n, h, addr_lst) {
+		#if 0/*SA_CUSTOM, changed by song*/
 			if (ifa->idev == idev) {
+		#else
+			if ((ifa->idev == idev) && ((ifa->flags & IFA_F_PERMANENT)==0)) {
+		#endif
 				hlist_del_init_rcu(&ifa->addr_lst);
 				addrconf_del_timer(ifa);
 				goto restart;
@@ -2729,6 +2743,7 @@ static int addrconf_ifdown(struct net_device *dev, int how)
 	}
 #endif
 
+#if 0/*SA_CUSTOM, not to remove permanent addresses*/
 	while (!list_empty(&idev->addr_list)) {
 		ifa = list_first_entry(&idev->addr_list,
 				       struct inet6_ifaddr, if_list);
@@ -2751,6 +2766,42 @@ static int addrconf_ifdown(struct net_device *dev, int how)
 
 		write_lock_bh(&idev->lock);
 	}
+#else
+{
+	struct inet6_ifaddr *pNextIfa;
+	struct list_head *p;
+
+	ifa = list_first_entry(&idev->addr_list, struct inet6_ifaddr, if_list);
+	while(ifa){
+		p = ifa->if_list.next;
+		if(p == &idev->addr_list)
+			break;
+		pNextIfa = container_of(p, struct inet6_ifaddr, if_list);
+		if(ifa->flags & IFA_F_PERMANENT){
+			ifa = pNextIfa;
+			continue;
+		}
+		
+		addrconf_del_timer(ifa);
+		list_del(&ifa->if_list);
+		write_unlock_bh(&idev->lock);
+
+		spin_lock_bh(&ifa->state_lock);
+		state = ifa->state;
+		ifa->state = INET6_IFADDR_STATE_DEAD;
+		spin_unlock_bh(&ifa->state_lock);
+
+		if (state != INET6_IFADDR_STATE_DEAD) {
+			__ipv6_ifa_notify(RTM_DELADDR, ifa);
+			atomic_notifier_call_chain(&inet6addr_chain, NETDEV_DOWN, ifa);
+		}
+		in6_ifa_put(ifa);
+
+		write_lock_bh(&idev->lock);
+		ifa = pNextIfa;
+	}
+}
+#endif
 
 	write_unlock_bh(&idev->lock);
 

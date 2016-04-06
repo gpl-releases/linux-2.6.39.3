@@ -27,6 +27,7 @@
 
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
+#include <linux/ti_hil.h>
 #include <net/netfilter/nf_log.h>
 #include "../../netfilter/xt_repldata.h"
 
@@ -1236,6 +1237,9 @@ __do_replace(struct net *net, const char *name, unsigned int valid_hooks,
 		ret = -EFAULT;
 	vfree(counters);
 	xt_table_unlock(t);
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    ti_hil_pp_event (TI_CT_NETFILTER_TABLE_UPDATE, (void *)t);
+#endif //CONFIG_TI_PACKET_PROCESSOR
 	return ret;
 
  put_module:

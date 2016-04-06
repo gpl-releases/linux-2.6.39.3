@@ -287,4 +287,24 @@ struct in6_flowlabel_req {
  * MRT6_PIM			208
  * (reserved)			209
  */
+
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+#define TI_IPV6_PKTINFO	81
+#endif
+/*
+*  TI Extension:
+*   data structure for passing the needed information
+*   about the incoming packet. Currently we only need a small element
+*/
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+#ifndef TI_PKTINFO_STRUCT
+#define TI_PKTINFO_STRUCT
+struct ti_pktinfo
+{
+	int		ifcpe_side;
+    char    mac_addr[6];
+};
+# endif
+#endif 
+
 #endif

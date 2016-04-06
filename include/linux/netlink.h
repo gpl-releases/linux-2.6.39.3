@@ -25,6 +25,10 @@
 #define NETLINK_SCSITRANSPORT	18	/* SCSI Transports */
 #define NETLINK_ECRYPTFS	19
 
+/*
+*	Added definition for NETLINK_TI_MPEG_ENCAP
+*/
+#define NETLINK_TI_MPEG_ENCAP   20
 #define MAX_LINKS 32		
 
 struct sockaddr_nl {

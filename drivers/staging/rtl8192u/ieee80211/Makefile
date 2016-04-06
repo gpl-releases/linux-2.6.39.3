@@ -66,7 +66,7 @@ uninstall:
 else
 LD := ld
 KSRC := /lib/modules/$(KVER)/build
-CONFIG_FILE := $(KSRC)/include/linux/autoconf.h
+CONFIG_FILE := $(KSRC)/include/generated/autoconf.h
 
 CFLAGS += -DLINUX -D__KERNEL__ -DMODULE -O2 -pipe -Wall
 CFLAGS += -I$(KSRC)/include -I.

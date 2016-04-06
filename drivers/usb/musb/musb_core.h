@@ -172,6 +172,14 @@ static inline void musb_host_rx(struct musb *m, u8 e) {}
 #define MUSB_C_NUM_EPS ((u8)16)
 #endif
 
+/* ** Number of Tx endpoints ** */
+/* Legal values are 1 - 16 (this value includes EP0) */
+#define MUSB_C_NUM_EPT 5
+
+/* ** Number of Rx endpoints ** */
+/* Legal values are 1 - 16 (this value includes EP0) */
+#define MUSB_C_NUM_EPR 5
+
 #ifndef MUSB_MAX_END0_PACKET
 #define MUSB_MAX_END0_PACKET ((u16)MUSB_EP0_FIFOSIZE)
 #endif
@@ -297,6 +305,7 @@ struct musb_hw_ep {
 
 	/* index in musb->endpoints[]  */
 	u8			epnum;
+	u8			dma_mode;
 
 	/* hardware configuration, possibly dynamic */
 	bool			is_shared_fifo;

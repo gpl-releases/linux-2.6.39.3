@@ -10,6 +10,16 @@
  * the Free Software Foundation; either version 2 of the License, or (at
  * your option) any later version.
  */
+
+
+/******************************************************************
+ 
+ Includes Intel Corporation's changes/modifications dated: 07/2011.
+ Changed/modified portions - Copyright(c) 2011, Intel Corporation. 
+
+******************************************************************/
+
+
 #ifndef __SDHCI_HW_H
 #define __SDHCI_HW_H
 
@@ -145,6 +155,12 @@
 #define SDHCI_INT_ALL_MASK	((unsigned int)-1)
 
 #define SDHCI_ACMD12_ERR	0x3C
+
+#ifdef CONFIG_ARCH_GEN3
+#define SDHCI_HOST_CONTROL2 	0x3E
+#define  SDHCI_CTRL2_DDR	0x4
+#define  SDHCI_CTRL2_SDR	0x0
+#endif
 
 /* 3E-3F reserved */
 

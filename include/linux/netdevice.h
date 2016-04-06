@@ -43,7 +43,15 @@
 #include <linux/percpu.h>
 #include <linux/rculist.h>
 #include <linux/dmaengine.h>
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+#include <linux/ti_ppm.h>
+#endif /* CONFIG_TI_PACKET_PROCESSOR */
+
+
 #include <linux/workqueue.h>
+
+
 
 #include <linux/ethtool.h>
 #include <net/net_namespace.h>
@@ -167,6 +175,15 @@ static inline bool dev_xmit_complete(int rc)
 #else
 #define MAX_HEADER (LL_MAX_HEADER + 48)
 #endif
+
+#ifdef CONFIG_TI_DEVICE_INDEX_REUSE
+/* Maximum number of net devices supported. TI L2 Selective forwarder uses
+ * 64 bits to mark the packet to indicate the device on which the packets should 
+ * be forwarded. Hence Max Device Index is limited to 64.
+ * Do not increment the number. 
+ */
+#define TI_MAX_DEVICE_INDEX     64
+#endif /* CONFIG_TI_DEVICE_INDEX_REUSE */
 
 /*
  *	Old network device statistics. Fields are native words
@@ -889,6 +906,9 @@ struct netdev_tc_txq {
  *
  */
 #define HAVE_NET_DEVICE_OPS
+
+
+
 struct net_device_ops {
 	int			(*ndo_init)(struct net_device *dev);
 	void			(*ndo_uninit)(struct net_device *dev);
@@ -1336,6 +1356,47 @@ struct net_device {
 #endif
 	/* n-tuple filter list attached to this device */
 	struct ethtool_rx_ntuple_list ethtool_ntuple_list;
+
+#ifdef CONFIG_TI_DEVICE_PROTOCOL_HANDLING
+    int (*packet_handler)(struct sk_buff *skb);
+#endif
+
+#ifdef CONFIG_TI_EGRESS_HOOK
+    int (*egress_hook)(struct sk_buff *skb);
+#endif
+
+#ifdef CONFIG_TI_DOCSIS_EGRESS_HOOK
+    int (*docsis_egress_hook)(struct sk_buff *skb);
+#endif
+
+#ifdef CONFIG_TI_GW_EGRESS_HOOK
+    int (*gw_egress_hook)(struct sk_buff *skb);
+#endif
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* PPM Device Information. Each networking device can be considered as a VPID
+     * instance executing on a PID. The PID is created when the hardware associated
+     * with the device has been initialized; the VPID Information is initialized and
+     * every subsequent call to bring the interface UP and DOWN results in VPID 
+     * creation and deletion. Virtual networking interfaces do not have a matching 
+     * VPID. So if the PID handle is -1 then there is no VPID manipulation done on the
+     * device. */
+    int         pid_handle;
+    int         vpid_handle;
+    
+    /* The VPID Information block which is associated with the networking device. 
+     * This field is kept in the networking device because it gives us a convenient
+     * place to store all the VPID specific information. As mentioned above not all
+     * networking devices are a networking endpoint. In such cases the values in this
+     * structure are ignored. */
+    TI_PP_VPID  vpid_block;
+
+    int (*qos_setup_hook)   (struct net_device *dev_p);
+    int (*qos_shutdown_hook)(struct net_device *dev_p);
+    int (*qos_select_hook)  (struct sk_buff    *skb);
+    int         devInstance;
+#endif
+
 
 	/* phy device may attach itself for hardware timestamping */
 	struct phy_device *phydev;
@@ -2741,6 +2802,13 @@ do {								\
 	0;							\
 })
 #endif
+
+
+#ifdef CONFIG_TI_DEVICE_PROTOCOL_HANDLING
+extern int ti_register_protocol_handler (struct net_device* dev, int (*packet_handler)(struct sk_buff *skb));
+extern int ti_deregister_protocol_handler (struct net_device* dev);
+#endif /* CONFIG_TI_DEVICE_PROTOCOL_HANDLING */
+
 
 #endif /* __KERNEL__ */
 

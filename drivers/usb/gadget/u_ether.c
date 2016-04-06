@@ -84,6 +84,19 @@ struct eth_dev {
 
 	bool			zlp;
 	u8			host_mac[ETH_ALEN];
+
+#ifdef CONFIG_MACH_PUMA5
+	unsigned 		int rndis_configured;
+#ifdef USB_MIB_SUPPORT
+	struct proc_dir_entry	*pde;
+	struct proc_dir_entry   *usblink_pde;
+	struct proc_dir_entry   *usbinfo_pde;
+	struct proc_dir_entry   *usbcppi_pde;
+	struct proc_dir_entry   *usbixia_pde;
+	CDC_RNDIS_STATS		ifstats;
+#endif
+#endif
+	
 };
 
 /*-------------------------------------------------------------------------*/
@@ -95,7 +108,7 @@ struct eth_dev {
 
 #ifdef CONFIG_USB_GADGET_DUALSPEED
 
-static unsigned qmult = 5;
+static unsigned qmult = 30;
 module_param(qmult, uint, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(qmult, "queue length multiplier at high speed");
 
@@ -312,6 +325,13 @@ static void rx_complete(struct usb_ep *ep, struct usb_request *req)
 					|| skb2->len > ETH_FRAME_LEN) {
 				dev->net->stats.rx_errors++;
 				dev->net->stats.rx_length_errors++;
+#ifdef CONFIG_MACH_PUMA5
+#ifdef USB_MIB_SUPPORT
+			    dev->ifstats.rx_errors++;
+			    dev->ifstats.receive_packets_dropped++;
+#endif
+#endif				
+				
 				DBG(dev, "rx length %d\n", skb2->len);
 				dev_kfree_skb_any(skb2);
 				goto next_frame;
@@ -319,7 +339,6 @@ static void rx_complete(struct usb_ep *ep, struct usb_request *req)
 			skb2->protocol = eth_type_trans(skb2, dev->net);
 			dev->net->stats.rx_packets++;
 			dev->net->stats.rx_bytes += skb2->len;
-
 			/* no buffer copies needed, unless hardware can't
 			 * use skb buffers.
 			 */
@@ -350,6 +369,11 @@ quiesce:
 
 	default:
 		dev->net->stats.rx_errors++;
+#ifdef CONFIG_MACH_PUMA5
+#ifdef USB_MIB_SUPPORT
+		dev->ifstats.rx_errors++;
+#endif
+#endif		
 		DBG(dev, "rx status %d\n", status);
 		break;
 	}
@@ -469,6 +493,11 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 	switch (req->status) {
 	default:
 		dev->net->stats.tx_errors++;
+#ifdef CONFIG_MACH_PUMA5
+#ifdef USB_MIB_SUPPORT
+		dev->ifstats.tx_errors++;
+#endif
+#endif	
 		VDBG(dev, "tx err %d\n", req->status);
 		/* FALLTHROUGH */
 	case -ECONNRESET:		/* unlink */
@@ -639,6 +668,17 @@ static void eth_start(struct eth_dev *dev, gfp_t gfp_flags)
 	/* and open the tx floodgates */
 	atomic_set(&dev->tx_qlen, 0);
 	netif_wake_queue(dev->net);
+#if defined(CONFIG_ARM_AVALANCHE_PPD) && defined(CONFIG_USB_PPD_SUPPORT)
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    ti_ppm_set_pid_flags (dev->net->pid_handle, 0);
+#else
+    ti_ppd_set_pid_flags (&pid_usb[0], 0);
+#endif
+#endif
+
+#ifdef CONFIG_MACH_PUMA5
+        netif_carrier_on (dev->net);
+#endif	
 }
 
 static int eth_open(struct net_device *net)
@@ -647,6 +687,26 @@ static int eth_open(struct net_device *net)
 	struct gether	*link;
 
 	DBG(dev, "%s\n", __func__);
+
+#ifdef KERNEL_PORTING_FIX_ME
+#ifdef CONFIG_MACH_PUMA5
+	/* TAG0003 */
+    if (dev->config)
+           netif_carrier_on (dev->net);
+#endif
+#endif
+#if defined(CONFIG_ARM_AVALANCHE_PPD) && defined(CONFIG_USB_PPD_SUPPORT)
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    ti_ppm_set_pid_flags (net->pid_handle, 0);
+    uninstall_usb_pid( net, rndis_default_mode, true );
+      install_usb_pid( net, rndis_default_mode, true );
+#else
+    ti_ppd_set_pid_flags (&pid_usb[0], 0);
+    uninstall_usb_pid( net, rndis_default_mode, true );
+      install_usb_pid( net, rndis_default_mode, true );
+#endif
+#endif
+	
 	if (netif_carrier_ok(dev->net))
 		eth_start(dev, GFP_KERNEL);
 
@@ -666,6 +726,23 @@ static int eth_stop(struct net_device *net)
 
 	VDBG(dev, "%s\n", __func__);
 	netif_stop_queue(net);
+#ifdef CONFIG_MACH_PUMA5
+    netif_carrier_off (dev->net);
+#endif
+
+//#ifdef CONFIG_ARM_AVALANCHE_PPD
+#if defined(CONFIG_ARM_AVALANCHE_PPD) && defined(CONFIG_USB_PPD_SUPPORT)
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    ti_ppm_set_pid_flags (net->pid_handle, TI_PP_PID_DISCARD_ALL_RX);
+    uninstall_usb_pid( net, rndis_default_mode, false );
+#else
+    ti_ppd_set_pid_flags (&pid_usb[0], TI_PP_PID_DISCARD_ALL_RX);
+    uninstall_usb_pid( net, rndis_default_mode, false );
+#endif
+    /* this delay is to make sure all the packets with the PID successfully egress throgh the respective ports.*/
+    mdelay(200);
+#endif
+
 
 	DBG(dev, "stop stats: rx/tx %ld/%ld, errs %ld/%ld\n",
 		dev->net->stats.rx_packets, dev->net->stats.tx_packets,
@@ -676,7 +753,6 @@ static int eth_stop(struct net_device *net)
 	spin_lock_irqsave(&dev->lock, flags);
 	if (dev->port_usb) {
 		struct gether	*link = dev->port_usb;
-
 		if (link->close)
 			link->close(link);
 
@@ -737,6 +813,9 @@ static int get_ether_addr(const char *str, u8 *dev_addr)
 
 static struct eth_dev *the_dev;
 
+#ifdef CONFIG_MACH_PUMA5
+extern int eth_ioctl(struct net_device *p_dev, struct ifreq *rq, int cmd);
+#endif
 static const struct net_device_ops eth_netdev_ops = {
 	.ndo_open		= eth_open,
 	.ndo_stop		= eth_stop,
@@ -744,6 +823,11 @@ static const struct net_device_ops eth_netdev_ops = {
 	.ndo_change_mtu		= ueth_change_mtu,
 	.ndo_set_mac_address 	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
+#ifdef CONFIG_MACH_PUMA5
+#ifdef USB_MIB_SUPPORT
+	.ndo_do_ioctl = eth_ioctl,
+#endif
+#endif	
 };
 
 static struct device_type gadget_type = {

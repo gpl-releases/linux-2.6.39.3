@@ -552,6 +552,16 @@ void dmabounce_unregister_dev(struct device *dev)
 
 	dev_info(dev, "dmabounce: device unregistered\n");
 }
+
+EXPORT_SYMBOL(dma_map_single);
+EXPORT_SYMBOL(dma_unmap_single);
+EXPORT_SYMBOL(dma_map_sg);
+EXPORT_SYMBOL(dma_unmap_sg);
+EXPORT_SYMBOL(dma_sync_single_for_cpu);
+EXPORT_SYMBOL(dma_sync_single_for_device);
+EXPORT_SYMBOL(dma_sync_sg);
+EXPORT_SYMBOL(dmabounce_register_dev);
+
 EXPORT_SYMBOL(dmabounce_unregister_dev);
 
 MODULE_AUTHOR("Christopher Hoover <ch@hpl.hp.com>, Deepak Saxena <dsaxena@plexity.net>");

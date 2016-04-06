@@ -1,0 +1,4 @@
+destination-y=include/asm-arm/arch-avalanche/puma6/iosfsb_drv
+header-y +=iosfsb_api.h
+
+

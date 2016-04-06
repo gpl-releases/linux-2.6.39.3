@@ -23,6 +23,10 @@ struct notifier_block br_device_notifier = {
 	.notifier_call = br_device_event
 };
 
+#ifdef CONFIG_TI_UNMANAGED_BRIDGE
+extern int ti_unmanaged_bridge_handler (struct net_device *dev, unsigned long event);
+#endif /* CONFIG_TI_UNMANAGED_BRIDGE */
+
 /*
  * Handle changes in state of network devices enslaved to a bridge.
  *
@@ -35,6 +39,15 @@ static int br_device_event(struct notifier_block *unused, unsigned long event, v
 	struct net_bridge_port *p;
 	struct net_bridge *br;
 	int err;
+
+#ifdef CONFIG_TI_UNMANAGED_BRIDGE
+    /* Pass control to the unmanaged bridge handler. */
+    if (ti_unmanaged_bridge_handler(dev, event) == 0)
+    {
+        /* The event has been handled by the unmanaged bridge handler. */  
+        return NOTIFY_DONE;
+    }
+#endif /* CONFIG_TI_UNMANAGED_BRIDGE */
 
 	/* not a port of a bridge */
 	p = br_port_get_rtnl(dev);

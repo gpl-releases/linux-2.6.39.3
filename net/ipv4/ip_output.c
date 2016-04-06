@@ -81,6 +81,17 @@
 #include <linux/netlink.h>
 #include <linux/tcp.h>
 
+#ifdef CONFIG_TI_DOCSIS_INPUT_DEV
+#define DBRIDGE_IFINDEX_CHK(__ifindex, format, args...) \
+{ \
+    if (((__ifindex) < 0) || ((__ifindex) >= TI_MAX_DEVICE_INDEX)) \
+    { \
+        printk("\n===>>> %s - %d: Currupt " #__ifindex " - %d\n" format, __func__, __LINE__, __ifindex, ##args); \
+        BUG(); \
+    } \
+}
+#endif
+
 int sysctl_ip_default_ttl __read_mostly = IPDEFTTL;
 EXPORT_SYMBOL(sysctl_ip_default_ttl);
 
@@ -98,6 +109,16 @@ int __ip_local_out(struct sk_buff *skb)
 
 	iph->tot_len = htons(skb->len);
 	ip_send_check(iph);
+#ifdef CONFIG_TI_ICMP_ECHO_REPLY_NETFILTER_BYPASS
+	if(iph->protocol == IPPROTO_ICMP) {
+		struct icmphdr *icmph = (struct icmphdr *)((unsigned char *)(iph)+iph->ihl*4);
+
+		/*  hack to short circuit the Netfilter logic for ICMP echo reply */
+		if(icmph->type == ICMP_ECHOREPLY) {
+			return 1;            		
+		} 
+	} 
+#endif /* CONFIG_TI_ICMP_ECHO_REPLY_NETFILTER_BYPASS */
 	return nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_OUT, skb, NULL,
 		       skb_dst(skb)->dev, dst_output);
 }
@@ -423,6 +444,21 @@ static void ip_copy_metadata(struct sk_buff *to, struct sk_buff *from)
 #if defined(CONFIG_IP_VS) || defined(CONFIG_IP_VS_MODULE)
 	to->ipvs_property = from->ipvs_property;
 #endif
+#ifdef CONFIG_TI_DOCSIS_INPUT_DEV
+    to->ti_docsis_input_dev = from->ti_docsis_input_dev;
+    if (to->ti_docsis_input_dev)
+    {
+        DBRIDGE_IFINDEX_CHK(to->ti_docsis_input_dev->ifindex, "dev %p, devname %s, ti_docsis_input_dev %p, ti_docsis_input_dev->name %s", to->dev, to->dev ? to->dev->name : NULL, to->ti_docsis_input_dev, to->ti_docsis_input_dev->name);
+    }
+#endif /* CONFIG_TI_DOCSIS_INPUT_DEV */
+
+#ifdef CONFIG_INTEL_DOCSIS_ICMP_IIF
+    to->docsis_icmp_iif = from->docsis_icmp_iif;
+#endif /* CONFIG_INTEL_DOCSIS_ICMP_IIF */
+
+#ifdef CONFIG_TI_L2_SELECTIVE_FORWARDER
+    to->ti_selective_fwd_dev_info = from->ti_selective_fwd_dev_info;
+#endif /* CONFIG_TI_L2_SELECTIVE_FORWARDER */
 	skb_copy_secmark(to, from);
 }
 
@@ -778,7 +814,11 @@ static int __ip_append_data(struct sock *sk, struct sk_buff_head *queue,
 			    int getfrag(void *from, char *to, int offset,
 					int len, int odd, struct sk_buff *skb),
 			    void *from, int length, int transhdrlen,
-			    unsigned int flags)
+			    unsigned int flags
+#ifdef CONFIG_TI_META_DATA
+,unsigned int ti_meta_info
+#endif
+)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct sk_buff *skb;
@@ -917,6 +957,11 @@ alloc_new_skb:
 			skb->csum = 0;
 			skb_reserve(skb, hh_len);
 			skb_shinfo(skb)->tx_flags = cork->tx_flags;
+
+#ifdef CONFIG_TI_META_DATA
+            /* Fill in the meta information from the cookie. */
+            skb->ti_meta_info = ti_meta_info;
+#endif /* CONFIG_TI_META_DATA */
 
 			/*
 			 *	Find where to start putting bytes.
@@ -1102,7 +1147,11 @@ int ip_append_data(struct sock *sk,
 	}
 
 	return __ip_append_data(sk, &sk->sk_write_queue, &inet->cork, getfrag,
-				from, length, transhdrlen, flags);
+				from, length, transhdrlen, flags
+#ifdef CONFIG_TI_META_DATA
+				,ipc->ti_meta_info
+#endif
+									);
 }
 
 ssize_t	ip_append_page(struct sock *sk, struct page *page,
@@ -1339,7 +1388,6 @@ struct sk_buff *__ip_make_skb(struct sock *sk,
 	 */
 	cork->dst = NULL;
 	skb_dst_set(skb, &rt->dst);
-
 	if (iph->protocol == IPPROTO_ICMP)
 		icmp_out_count(net, ((struct icmphdr *)
 			skb_transport_header(skb))->type);
@@ -1418,7 +1466,11 @@ struct sk_buff *ip_make_skb(struct sock *sk,
 		return ERR_PTR(err);
 
 	err = __ip_append_data(sk, &queue, &cork, getfrag,
-			       from, length, transhdrlen, flags);
+			       from, length, transhdrlen, flags
+#ifdef CONFIG_TI_META_DATA
+				,ipc->ti_meta_info
+#endif
+);
 	if (err) {
 		__ip_flush_pending_frames(sk, &queue, &cork);
 		return ERR_PTR(err);

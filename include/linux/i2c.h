@@ -410,8 +410,9 @@ void i2c_unlock_adapter(struct i2c_adapter *);
 #define I2C_CLASS_HWMON		(1<<0)	/* lm_sensors, ... */
 #define I2C_CLASS_DDC		(1<<3)	/* DDC bus on graphics adapters */
 #define I2C_CLASS_SPD		(1<<7)	/* SPD EEPROMs and similar */
-
 /* Internal numbers to terminate lists */
+#define I2C_CLASS_ALL		(UINT_MAX) /* all of the above */
+
 #define I2C_CLIENT_END		0xfffeU
 
 /* The numbers to use to set I2C bus address */

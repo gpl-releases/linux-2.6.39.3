@@ -237,7 +237,7 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 
 HOSTCC       = gcc
 HOSTCXX      = g++
-HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer
+HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fno-omit-frame-pointer #-fomit-frame-pointer
 HOSTCXXFLAGS = -O2
 
 # Decide whether to build built-in, modular, or both.
@@ -568,7 +568,7 @@ else
 # incompatible with -fomit-frame-pointer with current GCC, so we don't use
 # -fomit-frame-pointer with FUNCTION_TRACER.
 ifndef CONFIG_FUNCTION_TRACER
-KBUILD_CFLAGS	+= -fomit-frame-pointer
+KBUILD_CFLAGS	+= -fno-omit-frame-pointer #-fomit-frame-pointer
 endif
 endif
 
@@ -1013,7 +1013,8 @@ firmware_install: FORCE
 # Kernel headers
 
 #Default location for installed headers
-export INSTALL_HDR_PATH = $(objtree)/usr
+INSTALL_HDR_PATH:= $(objtree)/usr
+export INSTALL_HDR_PATH 
 
 hdr-inst := -rR -f $(srctree)/scripts/Makefile.headersinst obj
 
@@ -1033,7 +1034,9 @@ headers_install: __headers
 	$(if $(wildcard $(srctree)/arch/$(hdr-arch)/include/asm/Kbuild),, \
 	$(error Headers not exportable for the $(SRCARCH) architecture))
 	$(Q)$(MAKE) $(hdr-inst)=include
-	$(Q)$(MAKE) $(hdr-inst)=arch/$(hdr-arch)/include/asm $(hdr-dst)
+	$(Q)$(MAKE) $(hdr-inst)=arch/$(hdr-arch)/include/asm $(hdr-dst)	
+	$(Q)$(MAKE) $(hdr-inst)=include/asm-$(hdr-arch)/arch-avalanche/puma6/iosfsb_drv $(hdr-dst)
+	$(Q)$(MAKE) $(hdr-inst)=include/asm-$(hdr-arch)/arch-avalanche/generic $(hdr-dst)      	
 
 PHONY += headers_check_all
 headers_check_all: headers_install_all
@@ -1538,3 +1541,8 @@ FORCE:
 # Declare the contents of the .PHONY variable as phony.  We keep that
 # information in a variable so we can use it in if_changed and friends.
 .PHONY: $(PHONY)
+
+
+
+install_inango:
+	cp -rfv arch/arm/boot/zImage  ../../../../build/dsdk/images/Image.bin

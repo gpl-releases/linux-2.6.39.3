@@ -8,6 +8,16 @@
  * the Free Software Foundation; either version 2 of the License, or (at
  * your option) any later version.
  */
+
+
+/******************************************************************
+ 
+ Includes Intel Corporation's changes/modifications dated: 12/2011.
+ Changed/modified portions - Copyright(c) 2011, Intel Corporation. 
+
+******************************************************************/
+
+
 #ifndef __SDHCI_H
 #define __SDHCI_H
 
@@ -16,6 +26,9 @@
 #include <linux/types.h>
 #include <linux/io.h>
 #include <linux/mmc/host.h>
+#ifdef CONFIG_ARCH_GEN3
+#include <asm-arm/arch-avalanche/puma6/hw_mutex_ctrl.h>
+#endif
 
 struct sdhci_host {
 	/* Data set by hardware interface driver */
@@ -109,6 +122,11 @@ struct sdhci_host {
 #define SDHCI_USE_ADMA		(1<<1)	/* Host is ADMA capable */
 #define SDHCI_REQ_USE_DMA	(1<<2)	/* Use DMA for this req. */
 #define SDHCI_DEVICE_DEAD	(1<<3)	/* Device unresponsive */
+#ifdef CONFIG_ARCH_GEN3
+#define SDHCI_SUPPORT_DDR	(1<<4)	/* Support DDR */
+/* Two or more processors access the controller, HW Mutex is necessary to avoid confliction*/
+#define SDHCI_SUPPORT_HW_MUTEX	(1<<5)		
+#endif
 
 	unsigned int version;	/* SDHCI spec. version */
 
@@ -147,4 +165,32 @@ struct sdhci_host {
 
 	unsigned long private[0] ____cacheline_aligned;
 };
+
+#ifdef CONFIG_ARCH_GEN3
+
+#define EMMC_HW_MUTEX_IS_LOCKED(host) (hw_mutex_is_locked(HW_MUTEX_EMMC))
+	
+
+#define LOCK_EMMC_HW_MUTEX(host) do{\
+        if(((struct sdhci_host *)host->private)->flags & SDHCI_SUPPORT_HW_MUTEX)\
+		{\
+			hw_mutex_lock(HW_MUTEX_EMMC);\
+            enable_irq(((struct sdhci_host *)host->private)->irq);\
+		}\
+	} while(0)
+
+
+#define UNLOCK_EMMC_HW_MUTEX(host) do{\
+	    if(((struct sdhci_host *)host->private)->flags & SDHCI_SUPPORT_HW_MUTEX)\
+        {\
+            disable_irq(((struct sdhci_host *)host->private)->irq);\
+            hw_mutex_unlock(HW_MUTEX_EMMC);\
+        }\
+	} while(0)
+
+
+
+#endif /* CONFIG_ARCH_GEN3 */
+
+
 #endif /* __SDHCI_H */

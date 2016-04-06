@@ -2,7 +2,7 @@ config ARM
 	bool
 	default y
 	select HAVE_AOUT
-	select HAVE_DMA_API_DEBUG
+	#select HAVE_DMA_API_DEBUG
 	select HAVE_IDE
 	select HAVE_MEMBLOCK
 	select RTC_LIB
@@ -29,6 +29,8 @@ config ARM
 	select HAVE_GENERIC_HARDIRQS
 	select HAVE_SPARSE_IRQ
 	select GENERIC_IRQ_SHOW
+ 	select IRQ_FORCED_THREADING
+
 	help
 	  The ARM series is a line of low-power-consumption RISC chip designs
 	  licensed by ARM Ltd and targeted at embedded applications and
@@ -107,6 +109,15 @@ config MCA
 config STACKTRACE_SUPPORT
 	bool
 	default y
+
+config LOCKDEP_SUPPORT
+	bool
+	default y
+
+config TRACE_IRQFLAGS_SUPPORT
+	bool
+	default y
+
 
 config HAVE_LATENCYTOP_SUPPORT
 	bool
@@ -207,6 +218,10 @@ config ARM_PATCH_PHYS_VIRT_16BIT
 	def_bool y
 	depends on ARM_PATCH_PHYS_VIRT && ARCH_MSM
 
+config RUNTIME_PHYS_OFFSET
+	bool
+
+
 source "init/Kconfig"
 
 source "kernel/Kconfig.freezer"
@@ -227,6 +242,10 @@ config MMU
 choice
 	prompt "ARM system type"
 	default ARCH_VERSATILE
+
+endchoice
+
+
 
 config ARCH_INTEGRATOR
 	bool "ARM Ltd. Integrator family"
@@ -302,6 +321,22 @@ config ARCH_BCMRING
 	select ARCH_WANT_OPTIONAL_GPIOLIB
 	help
 	  Support for Broadcom's BCMRing platform.
+
+
+config ARCH_AVALANCHE
+	bool "Intel Avalanche (Puma5, Puma6...)"
+	select ARM_AVALANCHE_SOC
+        select CPU_V6
+        select CPU_V6K
+        select ICST
+	select ARM_AMBA
+	select GENERIC_GPIO
+	select GENERIC_CLOCKEVENTS
+	help
+	  Support for Intel's Avalanche Platform
+
+
+source "arch/arm/mach-avalanche/Kconfig"
 
 config ARCH_CLPS711X
 	bool "Cirrus Logic CLPS711x/EP721x-based"
@@ -503,7 +538,6 @@ config ARCH_LPC32XX
 	select ARM_AMBA
 	select USB_ARCH_HAS_OHCI
 	select CLKDEV_LOOKUP
-	select GENERIC_TIME
 	select GENERIC_CLOCKEVENTS
 	help
 	  Support for the NXP LPC32XX family of processors
@@ -592,7 +626,6 @@ config ARCH_NUC93X
 config ARCH_TEGRA
 	bool "NVIDIA Tegra"
 	select CLKDEV_LOOKUP
-	select GENERIC_TIME
 	select GENERIC_CLOCKEVENTS
 	select GENERIC_GPIO
 	select HAVE_CLK
@@ -889,7 +922,6 @@ config ARCH_VT8500
 	select HAVE_PWM
 	help
 	  Support for VIA/WonderMedia VT8500/WM85xx System-on-Chip.
-endchoice
 
 #
 # This is sorted alphabetically by mach-* pathname.  However, plat-*
@@ -1478,6 +1510,8 @@ config ARM_ASM_UNIFIED
 
 config AEABI
 	bool "Use the ARM EABI to compile the kernel"
+	depends on !CPU_32v4
+	default y	
 	help
 	  This option allows for the kernel to be compiled using the latest
 	  ARM ABI (aka EABI).  This is only useful if you are using a user
@@ -1574,7 +1608,7 @@ config LEDS
 		   ARCH_LUBBOCK || MACH_MAINSTONE || ARCH_NETWINDER || \
 		   ARCH_OMAP || ARCH_P720T || ARCH_PXA_IDP || \
 		   ARCH_SA1100 || ARCH_SHARK || ARCH_VERSATILE || \
-		   ARCH_AT91 || ARCH_DAVINCI || \
+		   ARCH_AT91 || ARCH_DAVINCI || ARCH_AT91RM9200 || MACH_TRIZEPS4 ||\
 		   ARCH_KS8695 || MACH_RD88F5182 || ARCH_REALVIEW
 	help
 	  If you say Y here, the LEDs on your machine will be used
@@ -1686,6 +1720,40 @@ config DEPRECATED_PARAM_STRUCT
 endmenu
 
 menu "Boot options"
+
+config NAKED_BOOT
+	bool "Kernel image for naked booting environments"
+ 	depends on CMDLINE != ""
+ 	default n
+ 	help
+ 	  This produces a kernel binary that can simply be moved onto
+ 	  the target machine and jumped to without any sort of boot
+ 	  protocol from the bootloader.  This should only be used in
+ 	  cases where the bootloader fails to implement the required
+ 	  calling convention for executing the kernel as described in
+ 	  the file Documentation/arm/Booting.
+
+ 	  The use of this option imposes many restrictions on the kernel
+ 	  as it may not support more than one target machine, and all
+ 	  boot parameters such as memory size and root filesystem device
+ 	  have to be hardcoded in the default kernel command string (see
+ 	  CONFIG_CMDLINE).
+
+ 	  If dynamic ram configuration, multi-machine support or the
+ 	  ability for the user to specify a kernel command string at
+ 	  boot without the need for recompiling the kernel each time
+ 	  is required, then the bootloader must implement the boot
+ 	  protocol as described in Documentation/arm/Booting and this
+ 	  config option not be used.
+
+ 	  Please consider fixing your bootloader according to the
+ 	  documented boot protocol in all cases, or choose one
+ 	  from the many excellent open source bootloaders available
+ 	  on the net which already support the required boot protocol.
+
+ 	  If you're not sure what this is all about then say N.
+
+
 
 # Compressed boot loader in ROM.  Yes, we really want to ask about
 # TEXT and BSS so we preserve their values in the config files.

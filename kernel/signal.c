@@ -1212,6 +1212,7 @@ int kill_proc_info(int sig, struct siginfo *info, pid_t pid)
 	return error;
 }
 
+
 /* like kill_pid_info(), but doesn't use uid/euid of "current" */
 int kill_pid_info_as_uid(int sig, struct siginfo *info, struct pid *pid,
 		      uid_t uid, uid_t euid, u32 secid)
@@ -1345,6 +1346,14 @@ force_sigsegv(int sig, struct task_struct *p)
 	force_sig(SIGSEGV, p);
 	return 0;
 }
+
+int
+kill_proc(pid_t pid, int sig, int priv)
+{
+        return kill_proc_info(sig, __si_special(priv), pid);
+}
+EXPORT_SYMBOL(kill_proc);
+
 
 int kill_pgrp(struct pid *pid, int sig, int priv)
 {

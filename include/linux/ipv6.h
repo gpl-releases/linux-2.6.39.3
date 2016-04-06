@@ -342,7 +342,13 @@ struct ipv6_pinfo {
                                 rxflow:1,
 				rxtclass:1,
 				rxpmtu:1,
-				rxorigdstaddr:1;
+#ifdef CONFIG_TI_IP_PKTINFO_SOCKOPT
+				rxorigdstaddr:1,
+                ti_rxinfo:1;
+#else
+                rxorigdstaddr:1;
+#endif
+
 				/* 2 bits hole */
 		} bits;
 		__u16		all;

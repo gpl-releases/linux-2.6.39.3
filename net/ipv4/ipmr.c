@@ -65,7 +65,7 @@
 #include <net/checksum.h>
 #include <net/netlink.h>
 #include <net/fib_rules.h>
-
+#include <linux/ti_hil.h>
 #if defined(CONFIG_IP_PIMSM_V1) || defined(CONFIG_IP_PIMSM_V2)
 #define CONFIG_IP_PIMSM	1
 #endif
@@ -1045,6 +1045,11 @@ static int ipmr_mfc_delete(struct mr_table *mrt, struct mfcctl *mfc)
 		if (c->mfc_origin == mfc->mfcc_origin.s_addr &&
 		    c->mfc_mcastgrp == mfc->mfcc_mcastgrp.s_addr) {
 			list_del_rcu(&c->list);
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+            /* Generate the HIL Event indicating that the MFC Entry has been deleted. */
+            //ti_hil_pp_event (TI_MFC_ENTRY_DELETED, (void *)c);
+            ti_hil_pp_event (TI_MC_SESSION_DELETED,(void *)c);
+#endif// CONFIG_TI_PACKET_PROCESSOR
 
 			ipmr_cache_free(c);
 			return 0;
@@ -1098,7 +1103,15 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 		c->mfc_flags |= MFC_STATIC;
 
 	list_add_rcu(&c->list, &mrt->mfc_cache_array[line]);
-
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+	{
+		struct pp_mr_param pp_mr;
+        pp_mr.cache = c;
+        pp_mr.vif_table = &mrt->vif_table;
+	    /* Generate the HIL Event indicating that the MFC Entry has been created. */
+//	    ti_hil_pp_event (TI_MFC_ENTRY_CREATED, (void *)&pp_mr);
+	}
+#endif// CONFIG_TI_PACKET_PROCESSOR
 	/*
 	 *	Check to see if we resolved a queued list. If so we
 	 *	need to send on the frames and tidy up.
@@ -1757,15 +1770,22 @@ static int ip_mr_forward(struct net *net, struct mr_table *mrt,
 	/*
 	 *	Forward the frame
 	 */
+if ((cache->mfc_un.res.maxvif - cache->mfc_un.res.minvif) > 1)
+{
+    skb->pp_packet_info.ti_pp_flags |= TI_PPM_SESSION_BYPASS;
+}
 	for (ct = cache->mfc_un.res.maxvif - 1;
 	     ct >= cache->mfc_un.res.minvif; ct--) {
+
 		if (ip_hdr(skb)->ttl > cache->mfc_un.res.ttls[ct]) {
 			if (psend != -1) {
 				struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
 
 				if (skb2)
+                           {
 					ipmr_queue_xmit(net, mrt, skb2, cache,
-							psend);
+                                                   psend);
+                           }
 			}
 			psend = ct;
 		}
@@ -1773,7 +1793,6 @@ static int ip_mr_forward(struct net *net, struct mr_table *mrt,
 	if (psend != -1) {
 		if (local) {
 			struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
-
 			if (skb2)
 				ipmr_queue_xmit(net, mrt, skb2, cache, psend);
 		} else {
@@ -1818,7 +1837,6 @@ int ip_mr_input(struct sk_buff *skb)
 	struct net *net = dev_net(skb->dev);
 	int local = skb_rtable(skb)->rt_flags & RTCF_LOCAL;
 	struct mr_table *mrt;
-
 	/* Packet is looped back after forward, it should not be
 	 * forwarded second time, but still can be delivered locally.
 	 */

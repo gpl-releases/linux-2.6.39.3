@@ -47,6 +47,8 @@
 #include <net/netfilter/nf_nat.h>
 #include <net/netfilter/nf_nat_core.h>
 
+#include <linux/ti_hil.h>
+
 #define NF_CONNTRACK_VERSION	"0.5.0"
 
 int (*nfnetlink_parse_nat_setup_hook)(struct nf_conn *ct,
@@ -284,7 +286,15 @@ static void death_by_timeout(unsigned long ul_conntrack)
 {
 	struct nf_conn *ct = (void *)ul_conntrack;
 	struct nf_conn_tstamp *tstamp;
+	
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* Generate an event indicating the connection tracking entry is being deleted. */
+    ti_hil_pp_event (TI_CT_DEATH_BY_TIMEOUT, (void *)ct);
 
+    /* Did the HIL profile take over or not? */
+    if ((ct->ti_pp_status_flag & TI_PP_KILL_CONNTRACK) == 0)
+        return;  /* HIL Profile took over... */
+#endif
 	tstamp = nf_conn_tstamp_find(ct);
 	if (tstamp && tstamp->stop == 0)
 		tstamp->stop = ktime_to_ns(ktime_get_real());
@@ -691,6 +701,13 @@ __nf_conntrack_alloc(struct net *net, u16 zone,
 		nf_ct_zone->id = zone;
 	}
 #endif
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* Initialize the session handle in the ORIGINAL and REPLY Tuple.  */
+    ct->tuplehash[IP_CT_DIR_ORIGINAL].ti_pp_session_handle = TI_PP_SESSION_CT_IDLE;
+    ct->tuplehash[IP_CT_DIR_REPLY   ].ti_pp_session_handle = TI_PP_SESSION_CT_IDLE;
+    ct->ti_pp_status_flag = 0;
+#endif /* CONFIG_TI_PACKET_PROCESSOR */
+
 	/*
 	 * changes to lookup keys must be done before setting refcnt to 1
 	 */
@@ -806,7 +823,10 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 			exp->expectfn(ct, exp);
 		nf_ct_expect_put(exp);
 	}
-
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* Generate an event indicating that a connection tracking entry has been created. */
+    ti_hil_pp_event(TI_CT_ENTRY_CREATED, (void *)ct);
+#endif //CONFIG_TI_PACKET_PROCESSOR	
 	return &ct->tuplehash[IP_CT_DIR_ORIGINAL];
 }
 
@@ -940,6 +960,12 @@ nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum,
 		goto out;
 	}
 
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+    /* Check if the packet belongs to a connection which has not been acclerated? 
+     * For all packets matching the connection make sure the BYPASS flag is set. */
+    if (ct->ti_pp_status_flag & TI_PP_BYPASS)
+        skb->pp_packet_info.ti_pp_flags |= TI_PPM_SESSION_BYPASS;
+#endif
 	NF_CT_ASSERT(skb->nfct);
 
 	ret = l4proto->packet(ct, skb, dataoff, ctinfo, pf, hooknum);

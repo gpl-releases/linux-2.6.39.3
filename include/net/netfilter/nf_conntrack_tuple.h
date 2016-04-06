@@ -145,6 +145,17 @@ static inline void nf_ct_dump_tuple(const struct nf_conntrack_tuple *t)
 /* Connections have two entries in the hash table: one for each way */
 struct nf_conntrack_tuple_hash {
 	struct hlist_nulls_node hnnode;
+
+#ifdef CONFIG_TI_PACKET_PROCESSOR
+
+#define    TI_PP_SESSION_CT_IDLE            0x80000000
+#define    TI_PP_SESSION_CT_TCP_UPDATE      0x40000000
+#define IS_TI_PP_SESSION_CT_INVALID(s)      ((s) & 0xFFFFFF00)
+#define IS_TI_PP_SESSION_CT_IDLE(s)         ((s) & TI_PP_SESSION_CT_IDLE)
+
+    int    ti_pp_session_handle;
+#endif /* CONFIG_TI_PACKET_PROCESSOR */
+
 	struct nf_conntrack_tuple tuple;
 };
 
